@@ -12,7 +12,7 @@ const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'settings', 'pro', 'pro-si
 export default function RootLayout() {
   useFrameworkReady()
   const segments = useSegments()
-  const showTabBar = !HIDE_TAB_BAR.has(segments[0] as string)
+  const showTabBar = !HIDE_TAB_BAR.has(segments[0] as string) && segments[1] !== 'capture'
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -174,6 +174,10 @@ export function Zap({ size = 24, color = '#000' }: IconProps) {
   return <Ionicons name="flash" size={size} color={color} />
 }
 
+export function Gallery({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="image" size={size} color={color} />
+}
+
 export function ProBadge({ size = 16 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 144 144">
