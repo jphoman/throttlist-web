@@ -72,53 +72,50 @@ export default function CaptureScreen() {
         </Pressable>
       </View>
 
-      {/* Bottom row: gallery | shutter | build picker */}
-      <View style={styles.bottomBar}>
-        {/* Gallery picker */}
-        <Pressable style={styles.galleryBtn}>
-          <Gallery size={26} color="#fff" />
-        </Pressable>
+      {/* Gallery — bottom left */}
+      <Pressable style={styles.galleryBtn}>
+        <Gallery size={28} color="#fff" />
+      </Pressable>
 
-        {/* Shutter */}
-        <Pressable style={styles.shutter}>
-          <View style={styles.shutterInner} />
-        </Pressable>
+      {/* Shutter — centered */}
+      <Pressable style={styles.shutter}>
+        <View style={styles.shutterInner} />
+      </Pressable>
 
-        {/* Build selector — vertical stack bottom-right */}
-        <ScrollView
-          style={styles.buildScroll}
-          contentContainerStyle={styles.buildList}
-          showsVerticalScrollIndicator={false}
-        >
-          {MY_BUILDS.map(build => {
-            const isSelected = build.id === selectedBuildId
-            return (
-              <Pressable
-                key={build.id}
-                style={styles.buildItem}
-                onPress={() => setSelectedBuildId(build.id)}
+      {/* Build selector — bottom right */}
+      <ScrollView
+        style={styles.buildScroll}
+        contentContainerStyle={styles.buildList}
+        showsVerticalScrollIndicator={false}
+      >
+        {MY_BUILDS.map(build => {
+          const isSelected = build.id === selectedBuildId
+          return (
+            <Pressable
+              key={build.id}
+              style={styles.buildItem}
+              onPress={() => setSelectedBuildId(build.id)}
+            >
+              {build.coverPhotoUrl ? (
+                <Image
+                  source={{ uri: build.coverPhotoUrl }}
+                  style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}
+                />
+              ) : (
+                <View style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}>
+                  <InitialsAvatar name={build.nickname ?? build.model} size={40} />
+                </View>
+              )}
+              <Text
+                style={[styles.buildName, isSelected && styles.buildNameSelected]}
+                numberOfLines={1}
               >
-                {build.coverPhotoUrl ? (
-                  <Image
-                    source={{ uri: build.coverPhotoUrl }}
-                    style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}
-                  />
-                ) : (
-                  <View style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}>
-                    <InitialsAvatar name={build.nickname ?? build.model} size={40} />
-                  </View>
-                )}
-                <Text
-                  style={[styles.buildName, isSelected && styles.buildNameSelected]}
-                  numberOfLines={1}
-                >
-                  {build.nickname ?? build.model}
-                </Text>
-              </Pressable>
-            )
-          })}
-        </ScrollView>
-      </View>
+                {build.nickname ?? build.model}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </ScrollView>
     </View>
   )
 }
@@ -149,43 +146,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bottomBar: {
+  // Gallery — bare icon, bottom left
+  galleryBtn: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 56 : 36,
+    left: 32,
+    padding: 8,
+  },
+  // Shutter — centered on screen
+  shutter: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
+    alignSelf: 'center',
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 28,
-    gap: 0,
-  },
-  // Gallery
-  galleryBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  // Shutter
-  shutter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 4,
-  },
-  shutterRing: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   shutterInner: {
     width: 76,
@@ -194,17 +169,18 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: '#fff',
     backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  // Build picker
+  // Build picker — bottom right
   buildScroll: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 48 : 28,
+    right: 16,
     maxHeight: 160,
-    width: 64,
+    width: 68,
   },
   buildList: {
     gap: 10,
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingBottom: 4,
   },
   buildItem: {
