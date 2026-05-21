@@ -39,7 +39,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="add"
+        name="capture"
         options={{
           title: '',
           tabBarLabel: () => null,
