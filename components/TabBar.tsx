@@ -26,7 +26,7 @@ export default function TabBar() {
       <Pressable style={styles.item} onPress={() => nav('/discover')}>
         <Compass size={22} color={tab === 'discover' ? '#FFFFFF' : colors.textSecondary} />
       </Pressable>
-      <Pressable style={styles.item} onPress={() => nav('/add')}>
+      <Pressable style={styles.item} onPress={() => nav('/capture')}>
         <View style={styles.addCircle}>
           <Plus size={22} color="#FFFFFF" />
         </View>
