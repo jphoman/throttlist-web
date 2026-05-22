@@ -7,11 +7,13 @@ import {
   Pressable,
   TextInput,
   Platform,
+  ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
 import { ArrowLeft, CheckCircle, ChevronRight } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { ThrottlistLogo } from '@/components/ThrottlistLogo'
+import { supabase } from '@/lib/supabase'
 
 type Step = 'account' | 'terms' | 'build'
 
@@ -117,6 +119,8 @@ export default function SignupScreen() {
   const [buildModel, setBuildModel] = useState('')
   const [buildNickname, setBuildNickname] = useState('')
   const [buildStyle, setBuildStyle] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const accountValid = displayName.trim() && username.trim() && email.trim() && password.length >= 8
 
@@ -126,10 +130,46 @@ export default function SignupScreen() {
     if (step === 'build') { setStep('terms'); return }
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (step === 'account') { setStep('terms'); return }
     if (step === 'terms' && accepted) { setStep('build'); return }
-    if (step === 'build') { router.replace('/feed'); return }
+    if (step === 'build') {
+      setSubmitting(true)
+      setError(null)
+      try {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              username: username.trim().toLowerCase(),
+              display_name: displayName.trim(),
+              build_style: buildStyle || null,
+            },
+          },
+        })
+        if (signUpError) throw signUpError
+
+        // If user has a build to add, insert it after sign-up
+        if (data.user && buildMake.trim()) {
+          await supabase.from('builds').insert({
+            user_id: data.user.id,
+            year: buildYear ? parseInt(buildYear) : null,
+            make: buildMake.trim(),
+            model: buildModel.trim(),
+            nickname: buildNickname.trim() || null,
+            build_type: buildStyle || null,
+            slug: `${buildMake.trim().toLowerCase().replace(/\s+/g, '-')}-${buildModel.trim().toLowerCase().replace(/\s+/g, '-')}`,
+          })
+        }
+
+        router.replace('/feed')
+      } catch (err: any) {
+        setError(err.message ?? 'Something went wrong. Please try again.')
+      } finally {
+        setSubmitting(false)
+      }
+    }
   }
 
   const stepIndex = step === 'account' ? 0 : step === 'terms' ? 1 : 2
@@ -173,7 +213,7 @@ export default function SignupScreen() {
             <ChevronRight size={18} color="#fff" />
           </Pressable>
 
-          <Pressable style={styles.switchRow} onPress={() => router.replace('/feed')}>
+          <Pressable style={styles.switchRow} onPress={() => router.replace('/login')}>
             <Text style={styles.switchText}>Already have an account? </Text>
             <Text style={[styles.switchText, { color: colors.accent }]}>Log in</Text>
           </Pressable>
@@ -231,10 +271,18 @@ export default function SignupScreen() {
             </View>
           </View>
 
-          <Pressable style={styles.primaryBtn} onPress={handleNext}>
-            <Text style={styles.primaryBtnText}>
-              {buildMake.trim() ? 'Finish & go to feed' : 'Skip for now'}
-            </Text>
+          {error && <Text style={styles.errorText}>{error}</Text>}
+          <Pressable
+            style={[styles.primaryBtn, submitting && styles.primaryBtnDim]}
+            onPress={handleNext}
+            disabled={submitting}
+          >
+            {submitting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.primaryBtnText}>
+                  {buildMake.trim() ? 'Finish & go to feed' : 'Skip for now'}
+                </Text>
+            }
           </Pressable>
         </ScrollView>
       )}
@@ -413,4 +461,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   styleLabelSelected: { color: colors.accent },
+  errorText: {
+    color: '#f87171',
+    fontSize: 13,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
 })
