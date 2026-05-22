@@ -45,14 +45,6 @@ export default function AdminScreen() {
         <ThrottlistLogo color={colors.accent} height={32} />
 
         <View style={styles.fieldWrap}>
-          <Text style={styles.fieldLabel}>USERNAME</Text>
-          <View style={styles.fieldStatic}>
-            <Text style={styles.fieldStaticText}>admin</Text>
-          </View>
-        </View>
-
-        <View style={styles.fieldWrap}>
-          <Text style={styles.fieldLabel}>PASSWORD</Text>
           <TextInput
             style={[styles.fieldInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
             value={password}
