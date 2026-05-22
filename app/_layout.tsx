@@ -10,7 +10,7 @@ import TabBar from '@/components/TabBar'
 const queryClient = new QueryClient()
 
 const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'compose', 'settings', 'pro', 'pro-signup'])
-const PUBLIC_ROUTES = new Set(['onboarding', 'signup', 'login'])
+const PUBLIC_ROUTES = new Set(['onboarding', 'signup', 'login', 'terms'])
 
 function RootLayoutInner() {
   useFrameworkReady()

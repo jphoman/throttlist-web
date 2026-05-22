@@ -213,11 +213,11 @@ export default function SignupScreen() {
 
           <Text style={styles.termsNote}>
             {'By signing up, you agree to our '}
-            <Text style={styles.termsLink} onPress={() => router.push('/terms')}>Terms</Text>
+            <Text style={styles.termsLink} onPress={() => router.push({ pathname: '/terms', params: { section: 'terms' } })}>Terms</Text>
             {', '}
-            <Text style={styles.termsLink} onPress={() => router.push('/terms')}>Data Policy</Text>
+            <Text style={styles.termsLink} onPress={() => router.push({ pathname: '/terms', params: { section: 'privacy' } })}>Privacy Policy</Text>
             {' and '}
-            <Text style={styles.termsLink} onPress={() => router.push('/terms')}>Cookies Policy</Text>
+            <Text style={styles.termsLink} onPress={() => router.push({ pathname: '/terms', params: { section: 'cookies' } })}>Cookies Policy</Text>
             {'.'}
           </Text>
 
