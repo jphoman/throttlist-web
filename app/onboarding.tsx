@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   Platform,
 } from 'react-native'
 import { router } from 'expo-router'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import { colors } from '@/constants/throttlist'
 import { ThrottlistLogo } from '@/components/ThrottlistLogo'
 
@@ -26,15 +25,8 @@ const BUILD_TYPES = [
 export default function OnboardingScreen() {
   const [selected, setSelected] = useState<string | null>(null)
 
-  useEffect(() => {
-    AsyncStorage.getItem('@throttlist_onboarded')
-      .then(val => { if (val) router.replace('/feed') })
-      .catch(() => {})
-  }, [])
-
-  async function handleContinue() {
-    await AsyncStorage.setItem('@throttlist_onboarded', '1')
-    router.replace('/feed')
+  function handleContinue() {
+    router.replace('/signup')
   }
 
   return (
