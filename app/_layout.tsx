@@ -9,7 +9,7 @@ import TabBar from '@/components/TabBar'
 
 const queryClient = new QueryClient()
 
-const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'settings', 'pro', 'pro-signup'])
+const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'compose', 'settings', 'pro', 'pro-signup'])
 const PUBLIC_ROUTES = new Set(['onboarding', 'signup', 'login'])
 
 function RootLayoutInner() {
@@ -33,6 +33,7 @@ function RootLayoutInner() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="signup" />
         <Stack.Screen name="login" />
+        <Stack.Screen name="compose" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="following" />

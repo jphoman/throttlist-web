@@ -16,11 +16,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Bell, Compass, ChevronDown } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { listPosts, listParts, getUser, MOCK_BUILDS } from '@/lib/data'
-import { colors, MOCK_USER_ID } from '@/constants/throttlist'
+import { fetchFeed as fetchFeedFromSupabase, fetchUserBuilds } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors } from '@/constants/throttlist'
 import PostCard from '@/components/PostCard'
-import PartDetailSheet from '@/components/PartDetailSheet'
-import type { Post, Part } from '@/types'
+import type { Part } from '@/types'
 
 const HEADER_HEIGHT = Platform.OS === 'ios' ? 62 : 50
 const SORT_HEADER_HEIGHT = 36
@@ -30,30 +30,23 @@ type SortMode = 'for-you' | 'most-recent'
 
 const BUILD_TYPES = [
   { id: 'all', label: 'All Types' },
-  { id: 'moto', label: 'Moto' },
-  { id: 'car', label: 'Car' },
-  { id: 'audio', label: 'Audio' },
-  { id: 'pc', label: 'PC' },
+  { id: 'cafe_racer', label: 'Café Racer' },
+  { id: 'scrambler', label: 'Scrambler' },
+  { id: 'tracker', label: 'Tracker' },
+  { id: 'bobber', label: 'Bobber' },
+  { id: 'chopper', label: 'Chopper' },
+  { id: 'adventure', label: 'Adventure' },
+  { id: 'bagger', label: 'Bagger' },
+  { id: 'other', label: 'Other' },
 ]
-
-async function fetchFeedPosts(): Promise<Post[]> {
-  return listPosts({ limit: 30 })
-}
-
-async function fetchAllParts(): Promise<Part[]> {
-  return listParts()
-}
-
-async function fetchCurrentUser() {
-  return getUser(MOCK_USER_ID)
-}
 
 export default function FeedScreen() {
   const queryClient = useQueryClient()
-  const [selectedPart, setSelectedPart] = useState<Part | null>(null)
-  const [partSheetVisible, setPartSheetVisible] = useState(false)
+  const { user: authUser } = useAuth()
+  const userId = authUser?.id ?? ''
+
   const [refreshing, setRefreshing] = useState(false)
-  const [sortMode, setSortMode] = useState<SortMode>('for-you')
+  const [sortMode, setSortMode] = useState<SortMode>('most-recent')
   const [buildTypeFilter, setBuildTypeFilter] = useState('all')
   const [typePickerOpen, setTypePickerOpen] = useState(false)
   const [typeSearch, setTypeSearch] = useState('')
@@ -64,17 +57,13 @@ export default function FeedScreen() {
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['feed-posts'],
-    queryFn: fetchFeedPosts,
+    queryFn: () => fetchFeedFromSupabase(40),
   })
 
-  const { data: parts = [] } = useQuery({
-    queryKey: ['all-parts'],
-    queryFn: fetchAllParts,
-  })
-
-  const { data: currentUser } = useQuery({
-    queryKey: ['current-user'],
-    queryFn: fetchCurrentUser,
+  const { data: myBuilds = [] } = useQuery({
+    queryKey: ['my-builds', userId],
+    queryFn: () => fetchUserBuilds(userId),
+    enabled: !!userId,
   })
 
   const onRefresh = useCallback(async () => {
@@ -83,22 +72,20 @@ export default function FeedScreen() {
     setRefreshing(false)
   }, [queryClient])
 
-  const followedBuilds = useMemo(() => {
+  const filteredBuilds = useMemo(() => {
     const q = buildSearch.toLowerCase()
-    return [...MOCK_BUILDS]
-      .sort((a, b) => b.followerCount - a.followerCount)
-      .filter(b => !q || b.nickname.toLowerCase().includes(q) || b.make.toLowerCase().includes(q) || b.model.toLowerCase().includes(q))
-      .slice(0, 10)
-  }, [buildSearch])
+    return myBuilds.filter(b =>
+      !q ||
+      (b.nickname ?? '').toLowerCase().includes(q) ||
+      b.make.toLowerCase().includes(q) ||
+      b.model.toLowerCase().includes(q)
+    ).slice(0, 10)
+  }, [myBuilds, buildSearch])
 
   const displayedPosts = useMemo(() => {
     let result = [...posts]
-    if (buildFilter) {
-      result = result.filter(p => p.buildId === buildFilter)
-    }
-    if (buildTypeFilter !== 'all') {
-      result = result.filter(p => p.buildType === buildTypeFilter)
-    }
+    if (buildFilter) result = result.filter(p => p.buildId === buildFilter)
+    if (buildTypeFilter !== 'all') result = result.filter(p => p.buildType === buildTypeFilter)
     if (sortMode === 'most-recent') {
       result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }
@@ -110,35 +97,20 @@ export default function FeedScreen() {
     outputRange: [0, -COMBINED_HEADER_HEIGHT],
     extrapolate: 'clamp',
   })
-
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 50],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   })
 
-  function handlePartPress(part: Part) {
-    setSelectedPart(part)
-    setPartSheetVisible(true)
-  }
-
-  function handleShopPress(part: Part) {
-    setSelectedPart(part)
-    setPartSheetVisible(true)
-  }
-
-  function handleDismissDisclosure() {
-    queryClient.invalidateQueries({ queryKey: ['current-user'] })
-  }
-
   const selectedTypeDef = BUILD_TYPES.find(t => t.id === buildTypeFilter) ?? BUILD_TYPES[0]
   const isTypeFiltered = buildTypeFilter !== 'all'
-  const selectedBuildDef = MOCK_BUILDS.find(b => b.id === buildFilter)
+  const selectedBuildDef = myBuilds.find(b => b.id === buildFilter)
   const isBuildFiltered = !!buildFilter
 
   const filteredTypes = useMemo(() => {
     const q = typeSearch.toLowerCase()
-    return BUILD_TYPES.filter(t => !q || t.label.toLowerCase().includes(q)).slice(0, 10)
+    return BUILD_TYPES.filter(t => !q || t.label.toLowerCase().includes(q))
   }, [typeSearch])
 
   function renderEmptyState() {
@@ -146,16 +118,16 @@ export default function FeedScreen() {
       <View style={styles.emptyState}>
         <Compass size={48} color={colors.textTertiary} />
         <Text style={styles.emptyTitle}>
-          {isTypeFiltered ? `No ${selectedTypeDef.label} posts yet` : 'Your feed is empty'}
+          {isTypeFiltered ? `No ${selectedTypeDef.label} posts yet` : 'No posts yet'}
         </Text>
         <Text style={styles.emptyBody}>
           {isTypeFiltered
             ? 'Try a different build type or check back later'
-            : 'Follow builds to see their updates here'}
+            : 'Be the first — tap + to share your build'}
         </Text>
         {!isTypeFiltered && (
-          <Pressable style={styles.discoverBtn} onPress={() => router.push('/discover')}>
-            <Text style={styles.discoverBtnText}>Discover builds</Text>
+          <Pressable style={styles.discoverBtn} onPress={() => router.push('/capture')}>
+            <Text style={styles.discoverBtnText}>Create a post</Text>
           </Pressable>
         )}
       </View>
@@ -181,11 +153,8 @@ export default function FeedScreen() {
     ))
   }
 
-  const isDisclosureDismissed = Number(currentUser?.affiliateDisclosureDismissed) > 0
-
   return (
     <View style={styles.container}>
-      {/* Combined animated header */}
       <Animated.View
         style={[
           styles.headersWrap,
@@ -193,21 +162,16 @@ export default function FeedScreen() {
         ]}
         pointerEvents="box-none"
       >
-        {/* Main header */}
         <View style={styles.mainHeader} pointerEvents="box-none">
           <View style={styles.headerInner} pointerEvents="box-none">
             <View style={styles.headerSpacer} />
             <ThrottlistIcon size={60} color={colors.accent} />
             <Pressable style={styles.bellBtn} onPress={() => router.push('/alerts')}>
               <Bell size={22} color={colors.textSecondary} />
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>1</Text>
-              </View>
             </Pressable>
           </View>
         </View>
 
-        {/* Sort / filter header */}
         <View style={styles.sortHeader} pointerEvents="box-none">
           <Pressable
             style={[styles.sortPill, sortMode === 'for-you' && styles.sortPillActive]}
@@ -217,7 +181,6 @@ export default function FeedScreen() {
               For You
             </Text>
           </Pressable>
-
           <Pressable
             style={[styles.sortPill, sortMode === 'most-recent' && styles.sortPillActive]}
             onPress={() => setSortMode('most-recent')}
@@ -226,17 +189,17 @@ export default function FeedScreen() {
               Most Recent
             </Text>
           </Pressable>
-
-          <Pressable
-            style={[styles.sortPill, isBuildFiltered && styles.sortPillActive]}
-            onPress={() => setBuildPickerOpen(true)}
-          >
-            <Text style={[styles.sortPillText, isBuildFiltered && styles.sortPillTextActive]}>
-              {isBuildFiltered ? selectedBuildDef?.nickname ?? 'Build' : 'Build'}
-            </Text>
-            <ChevronDown size={11} color={isBuildFiltered ? '#fff' : colors.textTertiary} />
-          </Pressable>
-
+          {myBuilds.length > 0 && (
+            <Pressable
+              style={[styles.sortPill, isBuildFiltered && styles.sortPillActive]}
+              onPress={() => setBuildPickerOpen(true)}
+            >
+              <Text style={[styles.sortPillText, isBuildFiltered && styles.sortPillTextActive]}>
+                {isBuildFiltered ? (selectedBuildDef?.nickname || selectedBuildDef?.model || 'Build') : 'My Builds'}
+              </Text>
+              <ChevronDown size={11} color={isBuildFiltered ? '#fff' : colors.textTertiary} />
+            </Pressable>
+          )}
           <Pressable
             style={[styles.sortPill, isTypeFiltered && styles.sortPillActive]}
             onPress={() => setTypePickerOpen(true)}
@@ -273,25 +236,13 @@ export default function FeedScreen() {
                   {filteredTypes.map(type => (
                     <Pressable
                       key={type.id}
-                      style={[
-                        styles.pickerRow,
-                        buildTypeFilter === type.id && styles.pickerRowActive,
-                      ]}
-                      onPress={() => {
-                        setBuildTypeFilter(type.id)
-                        setTypePickerOpen(false)
-                        setTypeSearch('')
-                      }}
+                      style={[styles.pickerRow, buildTypeFilter === type.id && styles.pickerRowActive]}
+                      onPress={() => { setBuildTypeFilter(type.id); setTypePickerOpen(false); setTypeSearch('') }}
                     >
-                      <Text style={[
-                        styles.pickerRowText,
-                        buildTypeFilter === type.id && styles.pickerRowTextActive,
-                      ]}>
+                      <Text style={[styles.pickerRowText, buildTypeFilter === type.id && styles.pickerRowTextActive]}>
                         {type.label}
                       </Text>
-                      {buildTypeFilter === type.id && (
-                        <Text style={styles.pickerCheck}>✓</Text>
-                      )}
+                      {buildTypeFilter === type.id && <Text style={styles.pickerCheck}>✓</Text>}
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -301,7 +252,7 @@ export default function FeedScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Build picker */}
+      {/* My builds picker */}
       <Modal
         visible={buildPickerOpen}
         transparent
@@ -312,7 +263,7 @@ export default function FeedScreen() {
           <View style={styles.pickerBackdrop}>
             <TouchableWithoutFeedback>
               <View style={styles.pickerMenu}>
-                <Text style={styles.pickerTitle}>BUILD</Text>
+                <Text style={styles.pickerTitle}>MY BUILDS</Text>
                 <TextInput
                   style={styles.pickerSearch}
                   placeholder="Search builds…"
@@ -322,39 +273,27 @@ export default function FeedScreen() {
                   autoCorrect={false}
                 />
                 <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
-                  {buildFilter ? (
+                  {buildFilter && (
                     <Pressable
                       style={styles.pickerRow}
-                      onPress={() => {
-                        setBuildFilter('')
-                        setBuildPickerOpen(false)
-                        setBuildSearch('')
-                      }}
+                      onPress={() => { setBuildFilter(''); setBuildPickerOpen(false); setBuildSearch('') }}
                     >
                       <Text style={[styles.pickerRowText, { color: colors.textTertiary }]}>All Builds</Text>
                     </Pressable>
-                  ) : null}
-                  {followedBuilds.map(build => (
+                  )}
+                  {filteredBuilds.map(build => (
                     <Pressable
                       key={build.id}
                       style={[styles.pickerRow, buildFilter === build.id && styles.pickerRowActive]}
-                      onPress={() => {
-                        setBuildFilter(build.id)
-                        setBuildPickerOpen(false)
-                        setBuildSearch('')
-                      }}
+                      onPress={() => { setBuildFilter(build.id); setBuildPickerOpen(false); setBuildSearch('') }}
                     >
                       <View style={styles.buildPickerRowInner}>
                         <Text style={[styles.pickerRowText, buildFilter === build.id && styles.pickerRowTextActive]}>
-                          {build.nickname}
+                          {build.nickname || build.model}
                         </Text>
-                        <Text style={styles.buildPickerSub}>
-                          {build.year} {build.make} {build.model}
-                        </Text>
+                        <Text style={styles.buildPickerSub}>{build.year} {build.make} {build.model}</Text>
                       </View>
-                      {buildFilter === build.id && (
-                        <Text style={styles.pickerCheck}>✓</Text>
-                      )}
+                      {buildFilter === build.id && <Text style={styles.pickerCheck}>✓</Text>}
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -375,9 +314,7 @@ export default function FeedScreen() {
           renderItem={({ item }) => (
             <PostCard
               post={item}
-              parts={parts.filter(p => p.buildId === item.buildId)}
-              onPartPress={handlePartPress}
-              onShopPress={handleShopPress}
+              parts={[]}
               onBuildPress={() => {
                 if (item.username && item.buildSlug) {
                   router.push(`/build/${item.username}/${item.buildSlug}`)
@@ -408,68 +345,17 @@ export default function FeedScreen() {
           }
         />
       )}
-
-      <PartDetailSheet
-        part={selectedPart}
-        visible={partSheetVisible}
-        onClose={() => { setPartSheetVisible(false); setSelectedPart(null) }}
-        affiliateDisclosureDismissed={isDisclosureDismissed}
-        onDismissDisclosure={handleDismissDisclosure}
-      />
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  headersWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    backgroundColor: colors.bg,
-  },
-  mainHeader: {
-    height: HEADER_HEIGHT,
-    borderBottomWidth: 0,
-  },
-  headerInner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-  },
-  headerSpacer: {
-    width: 30,
-  },
-  bellBtn: {
-    position: 'relative',
-    padding: 4,
-    width: 30,
-    alignItems: 'center',
-  },
-  badge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  headersWrap: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, backgroundColor: colors.bg },
+  mainHeader: { height: HEADER_HEIGHT },
+  headerInner: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  headerSpacer: { width: 30 },
+  bellBtn: { padding: 4, width: 30, alignItems: 'center' },
   sortHeader: {
     height: SORT_HEADER_HEIGHT,
     flexDirection: 'row',
@@ -493,21 +379,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface1,
   },
-  sortPillActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  sortPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  sortPillTextActive: {
-    color: '#fff',
-  },
-  typePill: {
-    marginLeft: 'auto',
-  },
+  sortPillActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  sortPillText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  sortPillTextActive: { color: '#fff' },
   pickerBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -521,7 +395,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    minWidth: 160,
+    minWidth: 180,
+    maxHeight: 300,
     overflow: 'hidden',
   },
   pickerTitle: {
@@ -540,23 +415,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 11,
   },
-  pickerRowActive: {
-    backgroundColor: colors.surface2,
-  },
-  pickerRowText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textPrimary,
-  },
-  pickerRowTextActive: {
-    color: colors.accent,
-    fontWeight: '700',
-  },
-  pickerCheck: {
-    fontSize: 14,
-    color: colors.accent,
-    fontWeight: '700',
-  },
+  pickerRowActive: { backgroundColor: colors.surface2 },
+  pickerRowText: { fontSize: 14, fontWeight: '500', color: colors.textPrimary },
+  pickerRowTextActive: { color: colors.accent, fontWeight: '700' },
+  pickerCheck: { fontSize: 14, color: colors.accent, fontWeight: '700' },
   pickerSearch: {
     fontSize: 13,
     color: colors.textPrimary,
@@ -565,83 +427,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  buildPickerRowInner: {
-    flex: 1,
-  },
-  buildPickerSub: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  emptyContainer: {
-    flex: 1,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyBody: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  discoverBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  discoverBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
+  buildPickerRowInner: { flex: 1 },
+  buildPickerSub: { fontSize: 11, color: colors.textTertiary, marginTop: 2 },
+  emptyContainer: { flex: 1 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, paddingVertical: 60 },
+  emptyTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },
+  emptyBody: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  discoverBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 24, paddingVertical: 12 },
+  discoverBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   skeletonWrap: {},
-  skeletonCard: {
-    backgroundColor: colors.surface1,
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  skeletonHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 10,
-  },
-  skeletonAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.surface3,
-  },
-  skeletonHeaderInfo: {
-    flex: 1,
-  },
-  skeletonLine: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.surface3,
-  },
-  skeletonPhoto: {
-    width: '100%',
-    height: 300,
-    backgroundColor: colors.surface2,
-  },
-  skeletonFooter: {
-    padding: 16,
-    gap: 8,
-  },
+  skeletonCard: { backgroundColor: colors.surface1, marginBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  skeletonHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 10 },
+  skeletonAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surface3 },
+  skeletonHeaderInfo: { flex: 1 },
+  skeletonLine: { height: 12, borderRadius: 6, backgroundColor: colors.surface3 },
+  skeletonPhoto: { width: '100%', height: 300, backgroundColor: colors.surface2 },
+  skeletonFooter: { padding: 16, gap: 8 },
 })

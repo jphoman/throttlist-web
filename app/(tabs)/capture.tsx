@@ -9,19 +9,37 @@ import {
   Image,
 } from 'react-native'
 import { router } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
+import { useQuery } from '@tanstack/react-query'
 import { X, Zap, Settings, Gallery } from '@/components/Icons'
-import { colors, MOCK_USER_ID } from '@/constants/throttlist'
-import { MOCK_BUILDS } from '@/lib/data'
+import { colors } from '@/constants/throttlist'
+import { fetchUserBuilds } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
 
-const MY_BUILDS = MOCK_BUILDS.filter(b => b.userId === MOCK_USER_ID)
-
 export default function CaptureScreen() {
+  const { user: authUser } = useAuth()
+  const userId = authUser?.id ?? ''
+
   const [flash, setFlash] = useState(false)
-  const [selectedBuildId, setSelectedBuildId] = useState(MY_BUILDS[0]?.id ?? null)
+  const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null)
   const cameraRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
+  const { data: myBuilds = [] } = useQuery({
+    queryKey: ['my-builds', userId],
+    queryFn: () => fetchUserBuilds(userId),
+    enabled: !!userId,
+  })
+
+  // Auto-select first build once loaded
+  useEffect(() => {
+    if (myBuilds.length > 0 && !selectedBuildId) {
+      setSelectedBuildId(myBuilds[0].id)
+    }
+  }, [myBuilds])
+
+  // Start rear camera on web
   useEffect(() => {
     if (Platform.OS !== 'web') return
     const el = cameraRef.current
@@ -32,20 +50,13 @@ export default function CaptureScreen() {
     video.setAttribute('playsinline', '')
     video.setAttribute('muted', '')
     Object.assign(video.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      height: '100%',
-      objectFit: 'cover',
+      position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'cover',
     })
     el.appendChild(video)
 
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
-      .then(stream => {
-        streamRef.current = stream
-        video.srcObject = stream
-      })
+      .then(stream => { streamRef.current = stream; video.srcObject = stream })
       .catch(() => {})
 
     return () => {
@@ -54,9 +65,42 @@ export default function CaptureScreen() {
     }
   }, [])
 
+  async function handlePickFromGallery() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.85,
+    })
+    if (!result.canceled && result.assets[0]) {
+      router.push({
+        pathname: '/compose',
+        params: { photoUri: result.assets[0].uri, buildId: selectedBuildId ?? '' },
+      })
+    }
+  }
+
+  async function handleShutter() {
+    // On web: capture a frame from the live video stream
+    if (Platform.OS === 'web') {
+      const video = cameraRef.current?.querySelector('video') as HTMLVideoElement | null
+      if (!video) { handlePickFromGallery(); return }
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      canvas.getContext('2d')?.drawImage(video, 0, 0)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+      router.push({
+        pathname: '/compose',
+        params: { photoUri: dataUrl, buildId: selectedBuildId ?? '' },
+      })
+      return
+    }
+    handlePickFromGallery()
+  }
+
   return (
     <View style={styles.root}>
-      {/* Live camera viewfinder */}
       <View ref={cameraRef} style={styles.camera} />
 
       {/* Top controls */}
@@ -73,12 +117,12 @@ export default function CaptureScreen() {
       </View>
 
       {/* Gallery — bottom left */}
-      <Pressable style={styles.galleryBtn}>
+      <Pressable style={styles.galleryBtn} onPress={handlePickFromGallery}>
         <Gallery size={28} color="#fff" />
       </Pressable>
 
       {/* Shutter — centered */}
-      <Pressable style={styles.shutter}>
+      <Pressable style={styles.shutter} onPress={handleShutter}>
         <View style={styles.shutterInner} />
       </Pressable>
 
@@ -88,7 +132,7 @@ export default function CaptureScreen() {
         contentContainerStyle={styles.buildList}
         showsVerticalScrollIndicator={false}
       >
-        {MY_BUILDS.map(build => {
+        {myBuilds.map(build => {
           const isSelected = build.id === selectedBuildId
           return (
             <Pressable
@@ -102,15 +146,12 @@ export default function CaptureScreen() {
                   style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}
                 />
               ) : (
-                <View style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}>
-                  <InitialsAvatar name={build.nickname ?? build.model} size={40} />
+                <View style={[styles.buildThumb, styles.buildThumbFallback, isSelected && styles.buildThumbSelected]}>
+                  <InitialsAvatar name={build.nickname || build.model} size={40} />
                 </View>
               )}
-              <Text
-                style={[styles.buildName, isSelected && styles.buildNameSelected]}
-                numberOfLines={1}
-              >
-                {build.nickname ?? build.model}
+              <Text style={[styles.buildName, isSelected && styles.buildNameSelected]} numberOfLines={1}>
+                {build.nickname || build.model}
               </Text>
             </Pressable>
           )
@@ -121,56 +162,39 @@ export default function CaptureScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  camera: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
+  root: { flex: 1, backgroundColor: '#000' },
+  camera: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   topBar: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 54 : 20,
-    left: 0,
-    right: 0,
+    left: 0, right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  // Gallery — bare icon, bottom left
   galleryBtn: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 56 : 36,
     left: 32,
     padding: 8,
   },
-  // Shutter — centered on screen
   shutter: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
     alignSelf: 'center',
-    left: 0,
-    right: 0,
+    left: 0, right: 0,
     alignItems: 'center',
   },
   shutterInner: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: '#fff',
+    width: 76, height: 76, borderRadius: 38,
+    borderWidth: 4, borderColor: '#fff',
     backgroundColor: 'transparent',
   },
-  // Build picker — bottom right
   buildScroll: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
@@ -178,35 +202,15 @@ const styles = StyleSheet.create({
     maxHeight: 160,
     width: 68,
   },
-  buildList: {
-    gap: 10,
-    alignItems: 'flex-end',
-    paddingBottom: 4,
-  },
-  buildItem: {
-    alignItems: 'center',
-    gap: 3,
-  },
+  buildList: { gap: 10, alignItems: 'flex-end', paddingBottom: 4 },
+  buildItem: { alignItems: 'center', gap: 3 },
   buildThumb: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    width: 46, height: 46, borderRadius: 23,
+    borderWidth: 2, borderColor: 'transparent',
     opacity: 0.45,
   },
-  buildThumbSelected: {
-    borderColor: colors.accent,
-    opacity: 1,
-  },
-  buildName: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 9,
-    fontWeight: '600',
-    textAlign: 'center',
-    width: 58,
-  },
-  buildNameSelected: {
-    color: '#fff',
-  },
+  buildThumbFallback: { backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
+  buildThumbSelected: { borderColor: colors.accent, opacity: 1 },
+  buildName: { color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: '600', textAlign: 'center', width: 58 },
+  buildNameSelected: { color: '#fff' },
 })
