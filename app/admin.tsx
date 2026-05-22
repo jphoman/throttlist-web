@@ -67,7 +67,7 @@ export default function AdminScreen() {
 
       if (retryError) {
         setStatus('error')
-        setMessage('Account created — check your email to confirm, then try again.')
+        setMessage('Account created. To skip email confirmation: go to Supabase dashboard → Authentication → Settings → disable "Enable email confirmations". Then tap Enter again.')
         return
       }
 
@@ -84,7 +84,6 @@ export default function AdminScreen() {
       <View style={styles.content}>
         <ThrottlistLogo color={colors.accent} height={32} />
         <Text style={styles.label}>Admin Access</Text>
-        <Text style={styles.email}>{ADMIN_EMAIL || '—'}</Text>
 
         {status === 'error' && (
           <Text style={styles.error}>{message}</Text>
