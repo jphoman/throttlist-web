@@ -241,6 +241,33 @@ export async function toggleFollow(followerId: string, followingId: string, curr
   }
 }
 
+// ─── Discover queries ─────────────────────────────────────────────────────────
+
+export async function fetchAllBuilds(limit = 20): Promise<Build[]> {
+  const { data, error } = await supabase
+    .from('builds')
+    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .eq('status', 'active')
+    .order('follower_count', { ascending: false })
+    .limit(limit)
+  if (error || !data) return []
+  return data.map(mapBuild)
+}
+
+export async function fetchAllProfiles(limit = 10, excludeUserId?: string): Promise<User[]> {
+  let query = supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (excludeUserId) {
+    query = query.neq('id', excludeUserId)
+  }
+  const { data, error } = await query
+  if (error || !data) return []
+  return data.map(mapProfile)
+}
+
 // ─── Comment queries ──────────────────────────────────────────────────────────
 
 export async function fetchComments(postId: string): Promise<Comment[]> {

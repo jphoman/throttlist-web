@@ -12,9 +12,10 @@ import {
 } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
-import { Search, Tag, MessageCircle, Heart, TrendingUp, ProBadge } from '@/components/Icons'
-import { listBuilds, listUsers, listTags, listPosts, MOCK_PARTS, MOCK_COMMENTS, isProUser } from '@/lib/data'
-import { colors, formatFollowers, MOCK_USER_ID } from '@/constants/throttlist'
+import { Search, MessageCircle, Heart, TrendingUp } from '@/components/Icons'
+import { fetchAllBuilds, fetchAllProfiles, fetchFeed } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors, formatFollowers } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import type { Post } from '@/types'
 
@@ -31,39 +32,42 @@ const SORT_OPTIONS: { key: PostSort; label: string }[] = [
   { key: 'discussed', label: 'Most Discussed' },
 ]
 
-async function fetchDiscover() {
-  const [builds, users, tags, posts] = await Promise.all([
-    listBuilds({ status: 'active' }),
-    listUsers(),
-    listTags(),
-    listPosts({ limit: 20 }),
-  ])
-  const userMap = Object.fromEntries(users.map(u => [u.id, u]))
-
-  const enrichedBuilds = [...builds]
-    .sort((a, b) => b.followerCount - a.followerCount)
-    .slice(0, 20)
-    .map(b => ({ ...b, username: userMap[b.userId]?.username }))
-
-  const sortedTags = [...tags].sort((a, b) => b.followerCount - a.followerCount).slice(0, 12)
-  const recommendedUsers = users.filter(u => u.id !== MOCK_USER_ID).slice(0, 8)
-
-  return { builds: enrichedBuilds, tags: sortedTags, posts, recommendedUsers }
-}
+const TAGS = [
+  { name: 'cafe-racer', buildCount: 87 },
+  { name: 'scrambler', buildCount: 62 },
+  { name: 'yamaha', buildCount: 143 },
+  { name: 'xsr700', buildCount: 28 },
+  { name: 'xsr900', buildCount: 44 },
+  { name: 'bmw', buildCount: 119 },
+  { name: 'ninet', buildCount: 74 },
+  { name: 'triumph', buildCount: 91 },
+  { name: 'honda', buildCount: 134 },
+  { name: 'indian', buildCount: 58 },
+  { name: 'tracker', buildCount: 41 },
+  { name: 'adventure', buildCount: 98 },
+]
 
 export default function DiscoverScreen() {
+  const { user: authUser } = useAuth()
+  const userId = authUser?.id ?? ''
+
   const [query, setQuery] = useState('')
   const [postSort, setPostSort] = useState<PostSort>('trending')
 
-  const { data } = useQuery({
-    queryKey: ['discover-all'],
-    queryFn: fetchDiscover,
+  const { data: builds = [] } = useQuery({
+    queryKey: ['discover-builds'],
+    queryFn: () => fetchAllBuilds(20),
   })
 
-  const builds = data?.builds ?? []
-  const tags = data?.tags ?? []
-  const posts = data?.posts ?? []
-  const recommendedUsers = data?.recommendedUsers ?? []
+  const { data: recommendedUsers = [] } = useQuery({
+    queryKey: ['discover-users', userId],
+    queryFn: () => fetchAllProfiles(10, userId || undefined),
+  })
+
+  const { data: posts = [] } = useQuery({
+    queryKey: ['discover-posts'],
+    queryFn: () => fetchFeed(30, 0),
+  })
 
   const q = query.trim().toLowerCase()
   const isSearching = q.length > 0
@@ -74,14 +78,14 @@ export default function DiscoverScreen() {
       b.nickname?.toLowerCase().includes(q) ||
       b.make?.toLowerCase().includes(q) ||
       b.model?.toLowerCase().includes(q) ||
-      (b as any).username?.toLowerCase().includes(q),
+      b.username?.toLowerCase().includes(q),
     )
   }, [builds, q])
 
   const filteredTags = useMemo(() => {
-    if (!q) return tags
-    return tags.filter(t => t.name.toLowerCase().includes(q))
-  }, [tags, q])
+    if (!q) return TAGS
+    return TAGS.filter(t => t.name.toLowerCase().includes(q))
+  }, [q])
 
   const filteredPosts = useMemo(() => {
     let result = q
@@ -101,7 +105,7 @@ export default function DiscoverScreen() {
   return (
     <View style={styles.container}>
 
-      {/* Search bar — always pinned above scroll */}
+      {/* Search bar */}
       <View style={styles.header}>
         <View style={styles.searchBar}>
           <Search size={16} color={colors.textTertiary} />
@@ -119,12 +123,6 @@ export default function DiscoverScreen() {
         </View>
       </View>
 
-      {/*
-        Three direct children of ScrollView:
-          [0] collapsible content (users + builds + tags) — scrolls away
-          [1] sort bar — stays pinned via stickyHeaderIndices={[1]}
-          [2] posts grid — scrolls under the sort bar
-      */}
       <ScrollView
         stickyHeaderIndices={[1]}
         showsVerticalScrollIndicator={false}
@@ -133,7 +131,7 @@ export default function DiscoverScreen() {
 
         {/* [0] Collapses on scroll */}
         <View>
-          {/* Recommended users — horizontal scroll */}
+          {/* Recommended users */}
           {!isSearching && recommendedUsers.length > 0 && (
             <ScrollView
               horizontal
@@ -147,68 +145,52 @@ export default function DiscoverScreen() {
                   onPress={() => router.push(`/user/${user.username}`)}
                 >
                   <InitialsAvatar name={user.displayName} photoUrl={user.avatarUrl} size={58} />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
-                    {isProUser(user.username) && <ProBadge size={11} />}
-                  </View>
+                  <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
                 </Pressable>
               ))}
             </ScrollView>
           )}
 
-          {/* Trending builds — single-row horizontal scroll */}
+          {/* Trending builds */}
           {filteredBuilds.length > 0 && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.buildsRow}
             >
-              {filteredBuilds.map(build => {
-                const tagCount = MOCK_PARTS.filter(p => p.buildId === build.id).length
-                const commentCount = MOCK_COMMENTS.filter(c => c.targetId === build.id).length
-                return (
-                  <Pressable
-                    key={build.id}
-                    style={styles.buildItem}
-                    onPress={() => {
-                      if ((build as any).username && build.slug) {
-                        router.push(`/build/${(build as any).username}/${build.slug}`)
-                      }
-                    }}
-                  >
-                    {build.coverPhotoUrl ? (
-                      <Image source={{ uri: build.coverPhotoUrl }} style={styles.buildPhoto} resizeMode="cover" />
-                    ) : (
-                      <View style={[styles.buildPhoto, styles.fallback]} />
-                    )}
-                    <View style={styles.trendingBadge} pointerEvents="none">
-                      <TrendingUp size={11} color="#fff" />
-                    </View>
-                    <View style={styles.gridOverlay} pointerEvents="none">
-                      <View style={styles.gridStat}>
-                        <Tag size={11} color="#fff" />
-                        <Text style={styles.gridStatText}>{tagCount}</Text>
-                      </View>
-                      <View style={styles.gridStat}>
-                        <MessageCircle size={11} color="#fff" />
-                        <Text style={styles.gridStatText}>{commentCount}</Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                )
-              })}
+              {filteredBuilds.map(build => (
+                <Pressable
+                  key={build.id}
+                  style={styles.buildItem}
+                  onPress={() => {
+                    if (build.username && build.slug) {
+                      router.push(`/build/${build.username}/${build.slug}`)
+                    }
+                  }}
+                >
+                  {build.coverPhotoUrl ? (
+                    <Image source={{ uri: build.coverPhotoUrl }} style={styles.buildPhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.buildPhoto, styles.fallback]} />
+                  )}
+                  <View style={styles.trendingBadge} pointerEvents="none">
+                    <TrendingUp size={11} color="#fff" />
+                  </View>
+                  <View style={styles.buildOverlay} pointerEvents="none">
+                    <Text style={styles.buildLabel} numberOfLines={1}>
+                      {build.nickname || build.model}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
             </ScrollView>
           )}
 
-          {/* Trending tags */}
+          {/* Tags */}
           {filteredTags.length > 0 && (
             <View style={styles.tagsWrap}>
               {filteredTags.map(tag => (
-                <Pressable
-                  key={tag.name}
-                  style={styles.tagPill}
-                  onPress={() => router.push(`/tag/${tag.name}`)}
-                >
+                <Pressable key={tag.name} style={styles.tagPill}>
                   <Text style={styles.tagPillName}>#{tag.name}</Text>
                   <Text style={styles.tagPillCount}>{tag.buildCount}</Text>
                 </Pressable>
@@ -232,11 +214,10 @@ export default function DiscoverScreen() {
           ))}
         </View>
 
-        {/* [2] Posts grid — scrolls up under the sort bar */}
+        {/* [2] Posts grid */}
         <View style={styles.photoGrid}>
           {filteredPosts.map(post => {
             const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
-            const taggedIds: string[] = (() => { try { return JSON.parse(post.taggedPartIds) } catch { return [] } })()
             const thumb = photos[0]
             return (
               <Pressable
@@ -254,10 +235,6 @@ export default function DiscoverScreen() {
                   <View style={[styles.gridPhoto, styles.fallback]} />
                 )}
                 <View style={styles.gridOverlay} pointerEvents="none">
-                  <View style={styles.gridStat}>
-                    <Tag size={11} color="#fff" />
-                    <Text style={styles.gridStatText}>{taggedIds.length}</Text>
-                  </View>
                   <View style={styles.gridStat}>
                     <Heart size={11} color="#fff" />
                     <Text style={styles.gridStatText}>{formatFollowers(post.likeCount)}</Text>
@@ -316,7 +293,6 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   scroll: {},
-  // Users
   usersRow: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -335,7 +311,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     width: 68,
   },
-  // Builds horizontal scroll
   buildsRow: {
     paddingLeft: 16,
     paddingRight: 8,
@@ -363,7 +338,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 4,
   },
-  // Tags
+  buildOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  buildLabel: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   tagsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -392,7 +380,6 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 10,
   },
-  // Sticky sort bar
   sortBarSticky: {
     flexDirection: 'row',
     gap: 8,
@@ -422,7 +409,6 @@ const styles = StyleSheet.create({
   sortBtnTextActive: {
     color: '#fff',
   },
-  // Posts photo grid
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
