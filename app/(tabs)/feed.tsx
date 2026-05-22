@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Bell, Compass, ChevronDown } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFeed as fetchFeedFromSupabase, fetchUserBuilds } from '@/lib/supabaseQueries'
+import { fetchFeed as fetchFeedFromSupabase, fetchFollowedFeed, fetchUserBuilds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
 import PostCard from '@/components/PostCard'
@@ -56,8 +56,12 @@ export default function FeedScreen() {
   const scrollY = useRef(new Animated.Value(0)).current
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
-    queryKey: ['feed-posts'],
-    queryFn: () => fetchFeedFromSupabase(40),
+    queryKey: ['feed-posts', sortMode, userId],
+    queryFn: () =>
+      sortMode === 'for-you' && userId
+        ? fetchFollowedFeed(userId, 40)
+        : fetchFeedFromSupabase(40),
+    enabled: sortMode === 'most-recent' || !!userId,
   })
 
   const { data: myBuilds = [] } = useQuery({
@@ -68,9 +72,9 @@ export default function FeedScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await queryClient.invalidateQueries({ queryKey: ['feed-posts'] })
+    await queryClient.invalidateQueries({ queryKey: ['feed-posts', sortMode, userId] })
     setRefreshing(false)
-  }, [queryClient])
+  }, [queryClient, sortMode, userId])
 
   const filteredBuilds = useMemo(() => {
     const q = buildSearch.toLowerCase()
@@ -114,18 +118,30 @@ export default function FeedScreen() {
   }, [typeSearch])
 
   function renderEmptyState() {
+    const isForYouEmpty = sortMode === 'for-you' && !isTypeFiltered && !isBuildFiltered
     return (
       <View style={styles.emptyState}>
         <Compass size={48} color={colors.textTertiary} />
         <Text style={styles.emptyTitle}>
-          {isTypeFiltered ? `No ${selectedTypeDef.label} posts yet` : 'No posts yet'}
+          {isForYouEmpty
+            ? 'Follow some builds'
+            : isTypeFiltered
+            ? `No ${selectedTypeDef.label} posts yet`
+            : 'No posts yet'}
         </Text>
         <Text style={styles.emptyBody}>
-          {isTypeFiltered
+          {isForYouEmpty
+            ? 'Tap Follow on any build to see their posts here'
+            : isTypeFiltered
             ? 'Try a different build type or check back later'
             : 'Be the first — tap + to share your build'}
         </Text>
-        {!isTypeFiltered && (
+        {isForYouEmpty && (
+          <Pressable style={styles.discoverBtn} onPress={() => router.push('/discover')}>
+            <Text style={styles.discoverBtnText}>Discover builds</Text>
+          </Pressable>
+        )}
+        {!isTypeFiltered && !isForYouEmpty && (
           <Pressable style={styles.discoverBtn} onPress={() => router.push('/capture')}>
             <Text style={styles.discoverBtnText}>Create a post</Text>
           </Pressable>

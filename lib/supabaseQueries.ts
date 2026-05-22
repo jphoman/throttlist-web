@@ -163,6 +163,23 @@ export async function fetchFeed(limit = 20, offset = 0): Promise<Post[]> {
   return data.map(mapPost)
 }
 
+export async function fetchFollowedFeed(userId: string, limit = 20): Promise<Post[]> {
+  const { data: follows } = await supabase
+    .from('build_follows')
+    .select('build_id')
+    .eq('follower_id', userId)
+  const buildIds = (follows ?? []).map((r: any) => r.build_id)
+  if (buildIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*, profiles(username, display_name, avatar_url), builds(nickname, slug, year, make, model, cover_photo_url, build_type)')
+    .in('build_id', buildIds)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error || !data) return []
+  return data.map(mapPost)
+}
+
 export async function fetchUserPosts(userId: string): Promise<Post[]> {
   const { data, error } = await supabase
     .from('posts')
@@ -209,7 +226,7 @@ export async function fetchLikedPostIds(userId: string): Promise<Set<string>> {
 
 export async function fetchFollowingCount(userId: string): Promise<number> {
   const { count } = await supabase
-    .from('follows')
+    .from('build_follows')
     .select('*', { count: 'exact', head: true })
     .eq('follower_id', userId)
   return count ?? 0
