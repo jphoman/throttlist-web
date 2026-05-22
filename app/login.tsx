@@ -91,6 +91,10 @@ export default function LoginScreen() {
           }
         </Pressable>
 
+        <Pressable onPress={() => router.push('/forgot-password')} style={styles.forgotBtn}>
+          <Text style={styles.forgotText}>Forgot password?</Text>
+        </Pressable>
+
         <View style={{ flex: 1, minHeight: 32 }} />
 
         <Text style={styles.switchText}>Don't have an account?</Text>
@@ -171,6 +175,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  forgotBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  forgotText: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
   switchText: {
     color: colors.textTertiary,
