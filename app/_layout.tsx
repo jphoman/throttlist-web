@@ -9,8 +9,8 @@ import TabBar from '@/components/TabBar'
 
 const queryClient = new QueryClient()
 
-const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'compose', 'settings', 'pro', 'pro-signup'])
-const PUBLIC_ROUTES = new Set(['onboarding', 'signup', 'login', 'terms'])
+const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'compose', 'settings', 'pro', 'pro-signup', 'admin'])
+const PUBLIC_ROUTES = new Set(['onboarding', 'signup', 'login', 'terms', 'admin'])
 
 function RootLayoutInner() {
   useFrameworkReady()
@@ -44,6 +44,7 @@ function RootLayoutInner() {
         <Stack.Screen name="post/[postId]" />
         <Stack.Screen name="conversation/[id]" />
         <Stack.Screen name="terms" />
+        <Stack.Screen name="admin" />
         <Stack.Screen name="+not-found" />
       </Stack>
       {showTabBar && <TabBar />}
