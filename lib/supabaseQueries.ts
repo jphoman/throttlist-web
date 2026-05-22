@@ -241,6 +241,23 @@ export async function toggleFollow(followerId: string, followingId: string, curr
   }
 }
 
+// ─── Build follow queries ─────────────────────────────────────────────────────
+
+export async function fetchFollowedBuildIds(userId: string): Promise<Set<string>> {
+  const { data } = await supabase.from('build_follows').select('build_id').eq('follower_id', userId)
+  return new Set((data ?? []).map((r: any) => r.build_id))
+}
+
+export async function toggleBuildFollow(userId: string, buildId: string, currentlyFollowing: boolean) {
+  if (currentlyFollowing) {
+    await supabase.from('build_follows').delete().eq('follower_id', userId).eq('build_id', buildId)
+    await supabase.rpc('decrement_build_follower', { bid: buildId })
+  } else {
+    await supabase.from('build_follows').insert({ follower_id: userId, build_id: buildId })
+    await supabase.rpc('increment_build_follower', { bid: buildId })
+  }
+}
+
 // ─── Discover queries ─────────────────────────────────────────────────────────
 
 export async function fetchAllBuilds(limit = 20): Promise<Build[]> {
