@@ -46,40 +46,36 @@ export default function LoginScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
-        <ThrottlistLogo color={colors.accent} height={18} />
         <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.headline}>Welcome back</Text>
+        <View style={styles.logoWrap}>
+          <ThrottlistLogo color={colors.accent} height={36} />
+        </View>
+        <Text style={styles.headline}>Welcome back.</Text>
         <Text style={styles.sub}>Log in to your account.</Text>
 
         <View style={styles.form}>
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Email</Text>
-            <TextInput
-              style={[styles.fieldInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Password</Text>
-            <TextInput
-              style={[styles.fieldInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Your password"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-          </View>
+          <TextInput
+            style={[styles.fieldInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="EMAIL"
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TextInput
+            style={[styles.fieldInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="PASSWORD"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            autoCapitalize="none"
+          />
         </View>
 
         {error && <Text style={styles.errorText}>{error}</Text>}
@@ -95,9 +91,11 @@ export default function LoginScreen() {
           }
         </Pressable>
 
-        <Pressable style={styles.switchRow} onPress={() => router.replace('/signup')}>
-          <Text style={styles.switchText}>Don't have an account? </Text>
-          <Text style={[styles.switchText, { color: colors.accent }]}>Sign up</Text>
+        <View style={{ flex: 1, minHeight: 32 }} />
+
+        <Text style={styles.switchText}>Don't have an account?</Text>
+        <Pressable style={styles.signupBtn} onPress={() => router.replace('/signup')}>
+          <Text style={styles.signupBtnText}>Sign up</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -121,34 +119,33 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4, width: 44 },
   content: {
+    flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 48,
+    paddingBottom: 40,
+  },
+  logoWrap: {
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 16,
   },
   headline: {
     color: colors.textPrimary,
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
+    textAlign: 'center',
     marginBottom: 6,
   },
   sub: {
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 28,
+    marginBottom: 32,
+    textAlign: 'center',
   },
   form: {
     gap: 16,
     marginBottom: 28,
-  },
-  field: { gap: 6 },
-  fieldLabel: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   fieldInput: {
     backgroundColor: colors.surface1,
@@ -175,14 +172,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
   switchText: {
     color: colors.textTertiary,
     fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  signupBtn: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  signupBtnText: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: '700',
   },
   errorText: {
     color: '#f87171',
