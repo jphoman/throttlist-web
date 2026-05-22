@@ -223,9 +223,9 @@ export default function SignupScreen() {
 
           <View style={{ flex: 1, minHeight: 32 }} />
 
-          <Pressable style={styles.switchRow} onPress={() => router.replace('/login')}>
-            <Text style={styles.switchText}>Already have an account? </Text>
-            <Text style={[styles.switchText, { color: colors.accent }]}>Log in</Text>
+          <Text style={styles.switchText}>Already have an account?</Text>
+          <Pressable style={styles.loginBtn} onPress={() => router.replace('/login')}>
+            <Text style={styles.loginBtnText}>Log in</Text>
           </Pressable>
         </ScrollView>
       )}
@@ -397,14 +397,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingVertical: 16,
-  },
   switchText: {
     color: colors.textTertiary,
     fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  loginBtn: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  loginBtnText: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: '700',
   },
   // Terms
   termsWrap: {
