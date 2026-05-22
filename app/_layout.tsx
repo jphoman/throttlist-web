@@ -43,6 +43,7 @@ function RootLayoutInner() {
         <Stack.Screen name="user/[username]" />
         <Stack.Screen name="post/[postId]" />
         <Stack.Screen name="conversation/[id]" />
+        <Stack.Screen name="terms" />
         <Stack.Screen name="+not-found" />
       </Stack>
       {showTabBar && <TabBar />}

@@ -65,7 +65,6 @@ We may update these terms at any time. Continued use of Throttlist after updates
 Contact: legal@throttlist.com`
 
 function Field({
-  label,
   value,
   onChangeText,
   placeholder,
@@ -74,7 +73,6 @@ function Field({
   autoCapitalize,
   autoCorrect,
 }: {
-  label: string
   value: string
   onChangeText: (v: string) => void
   placeholder?: string
@@ -85,7 +83,6 @@ function Field({
 }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         style={[styles.fieldInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
         value={value}
@@ -181,7 +178,6 @@ export default function SignupScreen() {
         <Pressable onPress={handleBack} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
-        <ThrottlistLogo color={colors.accent} height={18} />
         <View style={{ width: 44 }} />
       </View>
 
@@ -194,14 +190,16 @@ export default function SignupScreen() {
 
       {step === 'account' && (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.headline}>Create your account</Text>
-          <Text style={styles.sub}>Join the moto community.</Text>
+          <View style={styles.logoWrap}>
+            <ThrottlistLogo color={colors.accent} height={36} />
+          </View>
+          <Text style={styles.sub}>Join the builders and creators community.</Text>
 
           <View style={styles.form}>
-            <Field label="Full name" value={displayName} onChangeText={setDisplayName} placeholder="Marco Rossi" autoCapitalize="words" />
-            <Field label="Username" value={username} onChangeText={setUsername} placeholder="yourusername" autoCapitalize="none" />
-            <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" />
-            <Field label="Password" value={password} onChangeText={setPassword} placeholder="8+ characters" secureTextEntry />
+            <Field value={displayName} onChangeText={setDisplayName} placeholder="FULL NAME" autoCapitalize="words" />
+            <Field value={username} onChangeText={setUsername} placeholder="USERNAME" autoCapitalize="none" />
+            <Field value={email} onChangeText={setEmail} placeholder="EMAIL" keyboardType="email-address" autoCapitalize="none" />
+            <Field value={password} onChangeText={setPassword} placeholder="PASSWORD" secureTextEntry />
           </View>
 
           <Pressable
@@ -212,6 +210,18 @@ export default function SignupScreen() {
             <Text style={styles.primaryBtnText}>Continue</Text>
             <ChevronRight size={18} color="#fff" />
           </Pressable>
+
+          <Text style={styles.termsNote}>
+            {'By signing up, you agree to our '}
+            <Text style={styles.termsLink} onPress={() => router.push('/terms')}>Terms</Text>
+            {', '}
+            <Text style={styles.termsLink} onPress={() => router.push('/terms')}>Data Policy</Text>
+            {' and '}
+            <Text style={styles.termsLink} onPress={() => router.push('/terms')}>Cookies Policy</Text>
+            {'.'}
+          </Text>
+
+          <View style={{ flex: 1, minHeight: 32 }} />
 
           <Pressable style={styles.switchRow} onPress={() => router.replace('/login')}>
             <Text style={styles.switchText}>Already have an account? </Text>
@@ -249,12 +259,12 @@ export default function SignupScreen() {
           <Text style={styles.sub}>You can add more builds from your profile.</Text>
 
           <View style={styles.form}>
-            <Field label="Year" value={buildYear} onChangeText={setBuildYear} placeholder={String(CURRENT_YEAR)} keyboardType="default" autoCapitalize="none" />
-            <Field label="Make" value={buildMake} onChangeText={setBuildMake} placeholder="Yamaha" autoCapitalize="words" />
-            <Field label="Model" value={buildModel} onChangeText={setBuildModel} placeholder="XSR700" autoCapitalize="words" />
-            <Field label="Nickname (optional)" value={buildNickname} onChangeText={setBuildNickname} placeholder="The Cappuccino" autoCapitalize="words" />
+            <Field value={buildYear} onChangeText={setBuildYear} placeholder="YEAR" keyboardType="default" autoCapitalize="none" />
+            <Field value={buildMake} onChangeText={setBuildMake} placeholder="MAKE" autoCapitalize="words" />
+            <Field value={buildModel} onChangeText={setBuildModel} placeholder="MODEL" autoCapitalize="words" />
+            <Field value={buildNickname} onChangeText={setBuildNickname} placeholder="NICKNAME (OPTIONAL)" autoCapitalize="words" />
 
-            <Text style={styles.fieldLabel}>Build style</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 4 }]}>Build style</Text>
             <View style={styles.styleGrid}>
               {BUILD_STYLES.map(s => (
                 <Pressable
@@ -322,21 +332,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   content: {
+    flexGrow: 1,
     paddingHorizontal: 24,
-    paddingBottom: 48,
+    paddingBottom: 40,
   },
-  headline: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    marginBottom: 6,
+  logoWrap: {
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 16,
   },
   sub: {
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 28,
+    textAlign: 'center',
+  },
+  termsNote: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  termsLink: {
+    color: colors.accent,
+    textDecorationLine: 'underline',
   },
   form: {
     gap: 16,
@@ -379,7 +400,7 @@ const styles = StyleSheet.create({
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 16,
   },
   switchText: {
     color: colors.textTertiary,
