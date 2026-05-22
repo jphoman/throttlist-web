@@ -23,17 +23,18 @@ export default function ProfileScreen() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', userId],
-    queryFn: () => Promise.all([
-      fetchProfile(userId),
-      fetchUserBuilds(userId),
-      fetchFollowingCount(userId),
-    ]),
+    queryFn: () => Promise.all([fetchProfile(userId), fetchUserBuilds(userId)]),
+    enabled: !!userId,
+  })
+
+  const { data: followingCount = 0 } = useQuery({
+    queryKey: ['following-count', userId],
+    queryFn: () => fetchFollowingCount(userId),
     enabled: !!userId,
   })
 
   const user = data?.[0] ?? null
   const builds = data?.[1] ?? []
-  const followingCount = data?.[2] ?? 0
 
   if (isLoading || !user) {
     return (

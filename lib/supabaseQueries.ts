@@ -265,12 +265,14 @@ export async function fetchFollowedBuildIds(userId: string): Promise<Set<string>
   return new Set((data ?? []).map((r: any) => r.build_id))
 }
 
-export async function toggleBuildFollow(userId: string, buildId: string, currentlyFollowing: boolean) {
+export async function toggleBuildFollow(userId: string, buildId: string, currentlyFollowing: boolean): Promise<void> {
   if (currentlyFollowing) {
-    await supabase.from('build_follows').delete().eq('follower_id', userId).eq('build_id', buildId)
+    const { error } = await supabase.from('build_follows').delete().eq('follower_id', userId).eq('build_id', buildId)
+    if (error) throw error
     await supabase.rpc('decrement_build_follower', { bid: buildId })
   } else {
-    await supabase.from('build_follows').insert({ follower_id: userId, build_id: buildId })
+    const { error } = await supabase.from('build_follows').insert({ follower_id: userId, build_id: buildId })
+    if (error) throw error
     await supabase.rpc('increment_build_follower', { bid: buildId })
   }
 }

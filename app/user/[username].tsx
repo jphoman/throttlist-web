@@ -55,10 +55,42 @@ export default function UserProfileScreen() {
 
   async function handleFollowBuild(buildId: string) {
     if (!userId) return
-    const isFollowing = followedBuildIds.has(buildId)
-    await toggleBuildFollow(userId, buildId, isFollowing)
-    queryClient.invalidateQueries({ queryKey: ['followed-builds', userId] })
-    queryClient.invalidateQueries({ queryKey: ['user-builds', user?.id] })
+    const wasFollowing = followedBuildIds.has(buildId)
+
+    // Snapshot for rollback
+    const prevFollowedIds = queryClient.getQueryData<Set<string>>(['followed-builds', userId])
+    const prevBuilds = queryClient.getQueryData<typeof builds>(['user-builds', user?.id])
+    const prevCount = queryClient.getQueryData<number>(['following-count', userId])
+
+    // Optimistic: toggle the Set so button flips instantly
+    queryClient.setQueryData<Set<string>>(['followed-builds', userId], (old = new Set()) => {
+      const next = new Set(old)
+      wasFollowing ? next.delete(buildId) : next.add(buildId)
+      return next
+    })
+
+    // Optimistic: update follower count on the build card
+    queryClient.setQueryData<typeof builds>(['user-builds', user?.id], (old = []) =>
+      old.map(b =>
+        b.id === buildId
+          ? { ...b, followerCount: Math.max(0, b.followerCount + (wasFollowing ? -1 : 1)) }
+          : b
+      )
+    )
+
+    // Optimistic: update the logged-in user's own following count
+    queryClient.setQueryData<number>(['following-count', userId], (old = 0) =>
+      Math.max(0, old + (wasFollowing ? -1 : 1))
+    )
+
+    try {
+      await toggleBuildFollow(userId, buildId, wasFollowing)
+    } catch {
+      // Rollback everything on failure
+      queryClient.setQueryData(['followed-builds', userId], prevFollowedIds)
+      queryClient.setQueryData(['user-builds', user?.id], prevBuilds)
+      queryClient.setQueryData(['following-count', userId], prevCount)
+    }
   }
 
   if (isLoading || !user) {
