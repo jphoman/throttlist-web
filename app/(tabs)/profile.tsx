@@ -11,10 +11,10 @@ import {
 } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
-import { Instagram, Youtube, Settings, ChevronRight, Star, ProBadge } from '@/components/Icons'
-import { fetchProfile, fetchUserBuilds, fetchFollowingCount } from '@/lib/supabaseQueries'
+import { Instagram, Youtube, Settings, ChevronRight, Star, ProBadge, Plus } from '@/components/Icons'
+import { fetchProfile, fetchUserBuilds, fetchFollowingCount, fetchCreatorFollowerCount } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
-import { colors } from '@/constants/throttlist'
+import { colors, formatFollowers } from '@/constants/throttlist'
 import BuildCard from '@/components/BuildCard'
 
 export default function ProfileScreen() {
@@ -30,6 +30,12 @@ export default function ProfileScreen() {
   const { data: followingCount = 0 } = useQuery({
     queryKey: ['following-count', userId],
     queryFn: () => fetchFollowingCount(userId),
+    enabled: !!userId,
+  })
+
+  const { data: followerCount = 0 } = useQuery({
+    queryKey: ['creator-followers', userId],
+    queryFn: () => fetchCreatorFollowerCount(userId),
     enabled: !!userId,
   })
 
@@ -74,6 +80,11 @@ export default function ProfileScreen() {
               {isPro && <ProBadge />}
             </View>
             <View style={styles.statsInline}>
+              <Pressable onPress={() => router.push(`/followers/${userId}` as any)} style={styles.statChip}>
+                <Text style={styles.statChipCount}>{formatFollowers(followerCount)}</Text>
+                <Text style={styles.statChipLabel}> followers</Text>
+              </Pressable>
+              <Text style={styles.statDivider}> · </Text>
               <Pressable onPress={() => router.push('/following')} style={styles.statChip}>
                 <Text style={styles.statChipCount}>{followingCount}</Text>
                 <Text style={styles.statChipLabel}> following</Text>
@@ -126,7 +137,18 @@ export default function ProfileScreen() {
       </View>
       {builds.length === 0 && (
         <View style={styles.emptyBuilds}>
-          <Text style={styles.emptyBuildsText}>No builds yet. Add your first build!</Text>
+          <Pressable
+            style={styles.emptyAddBtn}
+            onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
+          >
+            <View style={styles.emptyAddCircle}>
+              <Plus size={28} color="#fff" />
+            </View>
+          </Pressable>
+          <Text style={styles.emptyBuildsText}>Add your first build</Text>
+          <Text style={styles.emptyBuildsSubText}>
+            Then capture a photo to make your first post
+          </Text>
         </View>
       )}
       {builds.map(build => (
@@ -276,12 +298,31 @@ const styles = StyleSheet.create({
   },
   emptyBuilds: {
     paddingHorizontal: 16,
-    paddingVertical: 24,
+    paddingVertical: 40,
     alignItems: 'center',
+    gap: 12,
+  },
+  emptyAddBtn: {
+    marginBottom: 4,
+  },
+  emptyAddCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyBuildsText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptyBuildsSubText: {
     color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   sectionLabel: {
     color: colors.textSecondary,

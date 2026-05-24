@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   View,
   Text,
@@ -6,133 +6,163 @@ import {
   FlatList,
   Pressable,
   TextInput,
-  Image,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { ArrowLeft, Send as SendIcon } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
+import { useAuth } from '@/lib/auth'
+import {
+  fetchProfile,
+  fetchDirectMessages,
+  sendDirectMessage,
+  markMessagesRead,
+  type DirectMessage,
+} from '@/lib/supabaseQueries'
+import { supabase } from '@/lib/supabase'
+import type { User } from '@/types'
 
-const ME = 'cappuccinomoto'
-
-interface Message {
-  id: string
-  sender: string
-  text: string
-  ts: string
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  const diff = Date.now() - d.getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (h < 168) return d.toLocaleDateString('en-US', { weekday: 'short' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
-
-interface ConvoMeta {
-  id: string
-  name: string
-  avatarUrl?: string
-  isGroup?: boolean
-  isOnline?: boolean
-  participants?: { username: string; avatarUrl?: string }[]
-}
-
-const CONVOS: ConvoMeta[] = [
-  { id: 'c1', name: 'investomoto',     avatarUrl: '/avatars/investomoto.jpg',     isOnline: true },
-  { id: 'c2', name: 'moto_feelz',      avatarUrl: '/avatars/moto_feelz.jpg',      isOnline: true },
-  { id: 'c3', name: 'Moto Gang 🏍️',   isGroup: true, participants: [
-    { username: 'investomoto',    avatarUrl: '/avatars/investomoto.jpg' },
-    { username: 'moto_feelz',     avatarUrl: '/avatars/moto_feelz.jpg' },
-    { username: 'retroscrambler_',avatarUrl: '/avatars/retroscrambler_.jpg' },
-  ]},
-  { id: 'c4', name: 'retroscrambler_', avatarUrl: '/avatars/retroscrambler_.jpg', isOnline: false },
-  { id: 'c5', name: 'seven11moto',     avatarUrl: '/avatars/seven11moto.jpg' },
-  { id: 'c6', name: 'XSR Owners',      isGroup: true, participants: [
-    { username: 'investomoto', avatarUrl: '/avatars/investomoto.jpg' },
-    { username: 'seven11moto', avatarUrl: '/avatars/seven11moto.jpg' },
-  ]},
-  { id: 'c7', name: 'thecrocodile',    avatarUrl: '/avatars/thecrocodile.jpg' },
-]
-
-const THREAD_MESSAGES: Record<string, Message[]> = {
-  c1: [
-    { id: 'm1', sender: 'investomoto',   text: 'Hey! Just saw the new build post 🔥',             ts: '2:14 PM' },
-    { id: 'm2', sender: ME,              text: 'Thanks! Been working on that setup for a while',   ts: '2:16 PM' },
-    { id: 'm3', sender: 'investomoto',   text: 'That exhaust note in the reel is insane',          ts: '2:17 PM' },
-    { id: 'm4', sender: 'investomoto',   text: 'Fire build, what exhaust is that?',                ts: '2:18 PM' },
-    { id: 'm5', sender: 'investomoto',   text: 'Also where did you get those bar-end mirrors?',    ts: '2:18 PM' },
-  ],
-  c2: [
-    { id: 'm1', sender: 'moto_feelz',    text: 'Your XSR looks insane mate 🤌',                   ts: 'Yesterday' },
-    { id: 'm2', sender: ME,              text: 'Appreciate it! Took forever to dial in',           ts: 'Yesterday' },
-    { id: 'm3', sender: ME,              text: "Thanks! It's the SC-Project slip-on",              ts: '18m' },
-  ],
-  c3: [
-    { id: 'm1', sender: 'retroscrambler_',text: 'Anyone doing the canyon run this weekend?',       ts: 'Yesterday' },
-    { id: 'm2', sender: ME,              text: "I'm in, what time are we leaving?",                ts: 'Yesterday' },
-    { id: 'm3', sender: 'moto_feelz',    text: 'Same, just need to check the weather',             ts: 'Yesterday' },
-    { id: 'm4', sender: 'investomoto',   text: "Who's bringing tools Sunday?",                     ts: '1h' },
-    { id: 'm5', sender: 'investomoto',   text: 'I have the floor jack but need help with stands',  ts: '1h' },
-  ],
-  c4: [
-    { id: 'm1', sender: ME,              text: 'Been thinking about that exhaust swap you mentioned', ts: '4h' },
-    { id: 'm2', sender: 'retroscrambler_',text: 'Arrow or SC-Project both worth it on the Triumph', ts: '3h' },
-    { id: 'm3', sender: 'retroscrambler_',text: 'Group ride next Sunday, you in?',                 ts: '3h' },
-  ],
-  c5: [
-    { id: 'm1', sender: 'seven11moto',   text: 'Love the fork gaiter look on the XSR',            ts: '2d' },
-    { id: 'm2', sender: ME,              text: 'JvB Moto, highly recommend. Transforms the front', ts: '2d' },
-    { id: 'm3', sender: 'seven11moto',   text: 'Sent a photo',                                    ts: 'Yesterday' },
-  ],
-  c6: [
-    { id: 'm1', sender: 'seven11moto',   text: 'Anyone else have issues with the stock seat on long rides?', ts: '3d' },
-    { id: 'm2', sender: 'investomoto',   text: 'Yes, swapped mine after 200 miles',               ts: '3d' },
-    { id: 'm3', sender: ME,              text: 'You: Same issue with the stock seat 😅',           ts: '2d' },
-  ],
-  c7: [
-    { id: 'm1', sender: ME,              text: 'That Ducati shot from last week was 🔥',           ts: '1w' },
-    { id: 'm2', sender: 'thecrocodile',  text: 'Loved the latest post 🤘',                        ts: '1w' },
-  ],
-}
-
-function GroupAvatar({ participants }: { participants: { username: string; avatarUrl?: string }[] }) {
-  const [p0, p1] = participants
-  return (
-    <View style={{ width: 38, height: 38, position: 'relative' }}>
-      {p0?.avatarUrl
-        ? <Image source={{ uri: p0.avatarUrl }} style={avatarStyles.back} />
-        : <View style={[avatarStyles.back, { backgroundColor: colors.surface3 }]} />}
-      {p1?.avatarUrl
-        ? <Image source={{ uri: p1.avatarUrl }} style={avatarStyles.front} />
-        : <View style={[avatarStyles.front, { backgroundColor: colors.surface2 }]} />}
-    </View>
-  )
-}
-
-const avatarStyles = StyleSheet.create({
-  back:  { width: 28, height: 28, borderRadius: 14, position: 'absolute', top: 0, left: 0, borderWidth: 1.5, borderColor: colors.bg },
-  front: { width: 28, height: 28, borderRadius: 14, position: 'absolute', bottom: 0, right: 0, borderWidth: 1.5, borderColor: colors.bg },
-})
 
 export default function ConversationScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id: otherUserId } = useLocalSearchParams<{ id: string }>()
+  const { user: authUser } = useAuth()
+  const myId = authUser?.id ?? ''
+
+  const [otherUser, setOtherUser] = useState<User | null>(null)
+  const [messages, setMessages] = useState<DirectMessage[]>([])
+  const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
-  const [messages, setMessages] = useState<Message[]>(THREAD_MESSAGES[id] ?? [])
+  const [sending, setSending] = useState(false)
   const listRef = useRef<FlatList>(null)
 
-  const convo = CONVOS.find(c => c.id === id)
-  if (!convo) return null
+  // Load other user's profile + message history
+  useEffect(() => {
+    if (!otherUserId || !myId) return
+    let active = true
 
-  function send() {
-    if (!text.trim()) return
-    setMessages(prev => [...prev, {
-      id: `m${Date.now()}`,
-      sender: ME,
-      text: text.trim(),
-      ts: 'Now',
-    }])
+    Promise.all([
+      fetchProfile(otherUserId),
+      fetchDirectMessages(myId, otherUserId),
+    ]).then(([profile, msgs]) => {
+      if (!active) return
+      setOtherUser(profile)
+      setMessages(msgs)
+      setLoading(false)
+    })
+
+    // Mark incoming messages as read
+    markMessagesRead(myId, otherUserId)
+
+    return () => { active = false }
+  }, [myId, otherUserId])
+
+  // Supabase Realtime — listen for new incoming messages
+  useEffect(() => {
+    if (!myId || !otherUserId) return
+
+    const channel = supabase
+      .channel(`dm-${[myId, otherUserId].sort().join('-')}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `recipient_id=eq.${myId}`,
+        },
+        (payload) => {
+          const msg = payload.new as any
+          // Only care about messages from our current conversation partner
+          if (msg.sender_id !== otherUserId) return
+          setMessages(prev => {
+            // Avoid duplicates
+            if (prev.some(m => m.id === msg.id)) return prev
+            return [...prev, {
+              id: msg.id,
+              senderId: msg.sender_id,
+              recipientId: msg.recipient_id,
+              body: msg.body,
+              isRead: msg.is_read,
+              createdAt: msg.created_at,
+            }]
+          })
+          markMessagesRead(myId, otherUserId)
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [myId, otherUserId])
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
+    }
+  }, [messages.length])
+
+  async function handleSend() {
+    const body = text.trim()
+    if (!body || !myId || !otherUserId) return
     setText('')
+    setSending(true)
+
+    // Optimistic update
+    const optimisticId = `opt-${Date.now()}`
+    const optimistic: DirectMessage = {
+      id: optimisticId,
+      senderId: myId,
+      recipientId: otherUserId,
+      body,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    }
+    setMessages(prev => [...prev, optimistic])
+
+    const sent = await sendDirectMessage(myId, otherUserId, body)
+    setSending(false)
+    if (sent) {
+      // Replace optimistic with real message
+      setMessages(prev => prev.map(m => m.id === optimisticId ? sent : m))
+    } else {
+      // Remove optimistic on failure
+      setMessages(prev => prev.filter(m => m.id !== optimisticId))
+      setText(body)
+    }
   }
 
-  const senderAvatars: Record<string, string> = {}
-  CONVOS.forEach(c => { if (c.avatarUrl && !c.isGroup) senderAvatars[c.name] = c.avatarUrl })
-  convo.participants?.forEach(p => { if (p.avatarUrl) senderAvatars[p.username] = p.avatarUrl })
+  if (loading) {
+    return (
+      <View style={[styles.root, styles.centered]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    )
+  }
+
+  if (!otherUser) {
+    return (
+      <View style={[styles.root, styles.centered]}>
+        <Pressable onPress={() => router.back()} style={styles.backBtnAbs}>
+          <ArrowLeft size={20} color={colors.textSecondary} />
+        </Pressable>
+        <Text style={styles.notFound}>User not found</Text>
+      </View>
+    )
+  }
 
   return (
     <KeyboardAvoidingView
@@ -147,25 +177,18 @@ export default function ConversationScreen() {
         </Pressable>
         <Pressable
           style={styles.headerCenter}
-          onPress={() => {
-            if (!convo.isGroup && convo.name) router.push(`/user/${convo.name}` as any)
-          }}
+          onPress={() => router.push(`/user/${otherUser.username}` as any)}
         >
-          {convo.isGroup ? (
-            <GroupAvatar participants={convo.participants ?? []} />
-          ) : convo.avatarUrl ? (
-            <View>
-              <Image source={{ uri: convo.avatarUrl }} style={styles.headerAvatar} />
-              {convo.isOnline && <View style={styles.onlineDot} />}
-            </View>
-          ) : (
-            <InitialsAvatar name={convo.name} size={36} />
-          )}
+          <InitialsAvatar
+            name={otherUser.displayName || otherUser.username}
+            photoUrl={otherUser.avatarUrl}
+            size={36}
+          />
           <View style={styles.headerInfo}>
-            <Text style={styles.headerName}>{convo.name}</Text>
-            {!convo.isGroup && convo.isOnline !== undefined && (
-              <Text style={styles.headerStatus}>{convo.isOnline ? 'Active now' : 'Offline'}</Text>
-            )}
+            <Text style={styles.headerName}>
+              {otherUser.displayName || otherUser.username}
+            </Text>
+            <Text style={styles.headerHandle}>@{otherUser.username}</Text>
           </View>
         </Pressable>
         <View style={styles.headerSpacer} />
@@ -178,52 +201,87 @@ export default function ConversationScreen() {
         keyExtractor={m => m.id}
         contentContainerStyle={styles.messageList}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        ListEmptyComponent={
+          <View style={styles.emptyThread}>
+            <InitialsAvatar
+              name={otherUser.displayName || otherUser.username}
+              photoUrl={otherUser.avatarUrl}
+              size={64}
+            />
+            <Text style={styles.emptyThreadName}>
+              {otherUser.displayName || otherUser.username}
+            </Text>
+            <Text style={styles.emptyThreadSub}>@{otherUser.username}</Text>
+            <Text style={styles.emptyThreadHint}>
+              Send a message to start the conversation
+            </Text>
+          </View>
+        }
         renderItem={({ item, index }) => {
-          const isMe = item.sender === ME
-          const prevSender = index > 0 ? messages[index - 1].sender : null
-          const showAvatar = !isMe && item.sender !== prevSender
+          const isMe = item.senderId === myId
+          const prevMsg = index > 0 ? messages[index - 1] : null
+          const prevSameSender = prevMsg?.senderId === item.senderId
+          const showAvatar = !isMe && !prevSameSender
+
+          // Show timestamp if first message or >10 min gap from previous
+          const showTime = !prevMsg ||
+            (new Date(item.createdAt).getTime() - new Date(prevMsg.createdAt).getTime()) > 10 * 60 * 1000
 
           return (
-            <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
-              {!isMe && (
-                <View style={styles.msgAvatarSlot}>
-                  {showAvatar && (
-                    senderAvatars[item.sender]
-                      ? <Image source={{ uri: senderAvatars[item.sender] }} style={styles.msgAvatar} />
-                      : <InitialsAvatar name={item.sender} size={28} />
-                  )}
-                </View>
+            <View>
+              {showTime && (
+                <Text style={styles.timeSeparator}>{formatTime(item.createdAt)}</Text>
               )}
-              <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
-                {convo.isGroup && !isMe && showAvatar && (
-                  <Text style={styles.senderName}>@{item.sender}</Text>
+              <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
+                {!isMe && (
+                  <View style={styles.msgAvatarSlot}>
+                    {showAvatar && (
+                      <InitialsAvatar
+                        name={otherUser.displayName || otherUser.username}
+                        photoUrl={otherUser.avatarUrl}
+                        size={28}
+                      />
+                    )}
+                  </View>
                 )}
-                <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.text}</Text>
+                <View style={[
+                  styles.bubble,
+                  isMe ? styles.bubbleMe : styles.bubbleThem,
+                  prevSameSender && isMe && styles.bubbleMeGrouped,
+                  prevSameSender && !isMe && styles.bubbleThemGrouped,
+                ]}>
+                  <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+                    {item.body}
+                  </Text>
+                </View>
               </View>
             </View>
           )
         }}
       />
 
-      {/* Compose */}
+      {/* Compose bar */}
       <View style={styles.compose}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
           placeholder="Message…"
           placeholderTextColor={colors.textTertiary}
           value={text}
           onChangeText={setText}
           multiline
-          onSubmitEditing={send}
           returnKeyType="send"
           blurOnSubmit={false}
+          onSubmitEditing={handleSend}
         />
         <Pressable
-          style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
-          onPress={send}
-          disabled={!text.trim()}
+          style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
+          onPress={handleSend}
+          disabled={!text.trim() || sending}
         >
-          <SendIcon size={18} color={text.trim() ? '#fff' : colors.textTertiary} />
+          {sending
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <SendIcon size={18} color={text.trim() ? '#fff' : colors.textTertiary} />
+          }
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -234,6 +292,20 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBtnAbs: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 54 : 16,
+    left: 16,
+    padding: 4,
+  },
+  notFound: {
+    color: colors.textSecondary,
+    fontSize: 16,
   },
   header: {
     flexDirection: 'row',
@@ -252,44 +324,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.surface3,
-  },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    backgroundColor: colors.green,
-    borderWidth: 2,
-    borderColor: colors.bg,
-  },
   headerInfo: { gap: 1 },
   headerName: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
-  headerStatus: {
+  headerHandle: {
     color: colors.textTertiary,
     fontSize: 11,
   },
   headerSpacer: { width: 28 },
   messageList: {
     padding: 16,
-    gap: 4,
+    paddingBottom: 8,
+    flexGrow: 1,
+  },
+  timeSeparator: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    textAlign: 'center',
+    marginVertical: 12,
+  },
+  emptyThread: {
+    flex: 1,
+    alignItems: 'center',
+    paddingTop: 60,
+    gap: 8,
+  },
+  emptyThreadName: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 12,
+  },
+  emptyThreadSub: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  emptyThreadHint: {
+    color: colors.textTertiary,
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
   },
   msgRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 6,
-    marginVertical: 2,
+    marginVertical: 1,
   },
   msgRowMe: {
     justifyContent: 'flex-end',
@@ -297,11 +380,7 @@ const styles = StyleSheet.create({
   msgAvatarSlot: {
     width: 28,
     alignItems: 'center',
-  },
-  msgAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    justifyContent: 'flex-end',
   },
   bubble: {
     maxWidth: '72%',
@@ -317,15 +396,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface1,
     borderBottomLeftRadius: 4,
   },
-  senderName: {
-    color: colors.textTertiary,
-    fontSize: 10,
-    marginBottom: 2,
+  bubbleMeGrouped: {
+    borderBottomRightRadius: 18,
+    borderTopRightRadius: 4,
+  },
+  bubbleThemGrouped: {
+    borderBottomLeftRadius: 18,
+    borderTopLeftRadius: 4,
   },
   bubbleText: {
     color: colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 21,
   },
   bubbleTextMe: {
     color: '#fff',

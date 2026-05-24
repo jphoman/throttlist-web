@@ -9,7 +9,7 @@ import TabBar from '@/components/TabBar'
 
 const queryClient = new QueryClient()
 
-const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'compose', 'settings', 'pro', 'pro-signup', 'admin', 'forgot-password', 'reset-password'])
+const HIDE_TAB_BAR = new Set(['onboarding', 'signup', 'login', 'compose', 'settings', 'pro', 'pro-signup', 'admin', 'forgot-password', 'reset-password', 'add-build'])
 const PUBLIC_ROUTES = new Set(['onboarding', 'signup', 'login', 'terms', 'admin', 'forgot-password', 'reset-password'])
 
 function RootLayoutInner() {
@@ -23,7 +23,7 @@ function RootLayoutInner() {
     if (loading) return
     const inPublicRoute = PUBLIC_ROUTES.has(segments[0] as string)
     if (!session && !inPublicRoute) {
-      router.replace('/onboarding')
+      router.replace('/signup')
     }
   }, [session, loading, segments])
 
@@ -43,10 +43,12 @@ function RootLayoutInner() {
         <Stack.Screen name="user/[username]" />
         <Stack.Screen name="post/[postId]" />
         <Stack.Screen name="conversation/[id]" />
+        <Stack.Screen name="followers/[userId]" />
         <Stack.Screen name="terms" />
         <Stack.Screen name="admin" />
         <Stack.Screen name="forgot-password" />
         <Stack.Screen name="reset-password" />
+        <Stack.Screen name="add-build" />
         <Stack.Screen name="+not-found" />
       </Stack>
       {showTabBar && <TabBar />}

@@ -4,5 +4,5 @@ import { useAuth } from '@/lib/auth'
 export default function Index() {
   const { session, loading } = useAuth()
   if (loading) return null
-  return <Redirect href={session ? '/feed' : '/onboarding'} />
+  return <Redirect href={session ? '/feed' : '/signup'} />
 }

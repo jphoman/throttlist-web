@@ -1,247 +1,171 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  FlatList,
   Pressable,
   TextInput,
   Image,
   Platform,
+  Modal,
+  ActivityIndicator,
 } from 'react-native'
-import { Edit2, Search, ChevronRight, ProBadge } from '@/components/Icons'
-import { isProUser } from '@/lib/data'
+import { Edit2, Search, X, ArrowLeft } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
+import { useAuth } from '@/lib/auth'
+import {
+  fetchConversations,
+  searchProfiles,
+  type DMConversation,
+} from '@/lib/supabaseQueries'
+import type { User } from '@/types'
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
-interface StatusNote {
-  id: string
-  username: string
-  displayName: string
-  avatarUrl: string
-  note: string
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'now'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  const d = Math.floor(h / 24)
+  if (d < 7) return `${d}d`
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
-
-interface Conversation {
-  id: string
-  isGroup: boolean
-  name: string
-  avatarUrl?: string
-  participants?: { username: string; avatarUrl?: string }[]
-  lastMessage: string
-  timestamp: string
-  unread: number
-  isOnline?: boolean
-}
-
-interface MessageRequest {
-  id: string
-  username: string
-  displayName: string
-  avatarUrl: string
-  preview: string
-}
-
-const STATUS_NOTES: StatusNote[] = [
-  { id: '1', username: 'investomoto',    displayName: 'Ryan | Motorcyclist', avatarUrl: '/avatars/investomoto.jpg',    note: 'Just back from the canyon run 🏔️' },
-  { id: '2', username: 'moto_feelz',     displayName: 'Rob Hamilton',        avatarUrl: '/avatars/moto_feelz.jpg',     note: 'New Quad Lock mount installed 📱' },
-  { id: '3', username: 'retroscrambler_',displayName: 'Fred Neves',          avatarUrl: '/avatars/retroscrambler_.jpg',note: 'Looking for Triumph seat recs' },
-  { id: '4', username: 'seven11moto',    displayName: 'Seven11Moto',         avatarUrl: '/avatars/seven11moto.jpg',    note: 'XSR900 exhaust day 🔥' },
-  { id: '5', username: 'thecrocodile',   displayName: 'Chuck Schmidt',       avatarUrl: '/avatars/thecrocodile.jpg',   note: 'New Ducati shots dropping soon 📸' },
-]
-
-const CONVERSATIONS: Conversation[] = [
-  { id: 'c1', isGroup: false, name: 'investomoto',    avatarUrl: '/avatars/investomoto.jpg',    lastMessage: 'Fire build, what exhaust is that?',           timestamp: '2m',       unread: 2, isOnline: true },
-  { id: 'c2', isGroup: false, name: 'moto_feelz',     avatarUrl: '/avatars/moto_feelz.jpg',     lastMessage: "Thanks! It's the SC-Project slip-on",          timestamp: '18m',      unread: 0, isOnline: true },
-  {
-    id: 'c3', isGroup: true, name: 'Moto Gang 🏍️',
-    participants: [
-      { username: 'investomoto',    avatarUrl: '/avatars/investomoto.jpg' },
-      { username: 'moto_feelz',     avatarUrl: '/avatars/moto_feelz.jpg' },
-      { username: 'retroscrambler_',avatarUrl: '/avatars/retroscrambler_.jpg' },
-    ],
-    lastMessage: "investomoto: Who's bringing tools Sunday?", timestamp: '1h', unread: 5,
-  },
-  { id: 'c4', isGroup: false, name: 'retroscrambler_',avatarUrl: '/avatars/retroscrambler_.jpg',lastMessage: 'Group ride next Sunday, you in?',               timestamp: '3h',       unread: 1, isOnline: false },
-  { id: 'c5', isGroup: false, name: 'seven11moto',    avatarUrl: '/avatars/seven11moto.jpg',    lastMessage: 'Sent a photo',                                 timestamp: 'Yesterday',unread: 0 },
-  {
-    id: 'c6', isGroup: true, name: 'XSR Owners',
-    participants: [
-      { username: 'investomoto', avatarUrl: '/avatars/investomoto.jpg' },
-      { username: 'seven11moto', avatarUrl: '/avatars/seven11moto.jpg' },
-    ],
-    lastMessage: 'You: Same issue with the stock seat 😅', timestamp: '2d', unread: 0,
-  },
-  { id: 'c7', isGroup: false, name: 'thecrocodile',   avatarUrl: '/avatars/thecrocodile.jpg',   lastMessage: 'Loved the latest post 🤘',                     timestamp: '1w',       unread: 0 },
-]
-
-const MESSAGE_REQUESTS: MessageRequest[] = [
-  { id: 'r1', username: 'motozuc',     displayName: 'Justin',         avatarUrl: '/avatars/motozuc.jpg',     preview: 'Are those frame sliders stock or aftermarket?' },
-  { id: 'r2', username: 'coldbrewmoto',displayName: 'Cold Brew Moto', avatarUrl: '/avatars/coldbrewmoto.jpg',preview: 'Hey! Saw your XSR build on the discover page...' },
-]
-
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function GroupAvatar({ participants }: { participants: { username: string; avatarUrl?: string }[] }) {
-  const [p0, p1] = participants
-  return (
-    <View style={groupAvatarStyles.wrap}>
-      {p0?.avatarUrl ? (
-        <Image source={{ uri: p0.avatarUrl }} style={groupAvatarStyles.back} />
-      ) : (
-        <View style={[groupAvatarStyles.back, { backgroundColor: colors.surface3 }]} />
-      )}
-      {p1?.avatarUrl ? (
-        <Image source={{ uri: p1.avatarUrl }} style={groupAvatarStyles.front} />
-      ) : (
-        <View style={[groupAvatarStyles.front, { backgroundColor: colors.surface2 }]} />
-      )}
-    </View>
-  )
-}
-
-const groupAvatarStyles = StyleSheet.create({
-  wrap: {
-    width: 52,
-    height: 52,
-    position: 'relative',
-  },
-  back: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    borderWidth: 2,
-    borderColor: colors.bg,
-  },
-  front: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    borderWidth: 2,
-    borderColor: colors.bg,
-  },
-})
 
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function MessagesScreen() {
+  const { user: authUser } = useAuth()
   const [search, setSearch] = useState('')
-  const [requestsOpen, setRequestsOpen] = useState(false)
+  const [conversations, setConversations] = useState<DMConversation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [userSearch, setUserSearch] = useState('')
+  const [userResults, setUserResults] = useState<User[]>([])
+  const [searching, setSearching] = useState(false)
+
+  // Reload conversations every time the tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (!authUser?.id) return
+      let active = true
+      setLoading(true)
+      fetchConversations(authUser.id).then(data => {
+        if (active) {
+          setConversations(data)
+          setLoading(false)
+        }
+      })
+      return () => { active = false }
+    }, [authUser?.id])
+  )
 
   const q = search.trim().toLowerCase()
-
   const filteredConvos = q
-    ? CONVERSATIONS.filter(c => c.name.toLowerCase().includes(q))
-    : CONVERSATIONS
+    ? conversations.filter(c =>
+        c.otherUsername.toLowerCase().includes(q) ||
+        c.otherDisplayName.toLowerCase().includes(q)
+      )
+    : conversations
+
+  async function handleUserSearch(text: string) {
+    setUserSearch(text)
+    const trimmed = text.trim()
+    if (trimmed.length < 1) {
+      setUserResults([])
+      return
+    }
+    setSearching(true)
+    const results = await searchProfiles(trimmed, authUser?.id)
+    setUserResults(results)
+    setSearching(false)
+  }
+
+  function openConversation(otherUserId: string) {
+    setComposeOpen(false)
+    setUserSearch('')
+    setUserResults([])
+    router.push(`/conversation/${otherUserId}` as any)
+  }
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Direct Messages</Text>
-        <Pressable style={styles.composeBtn}>
+        <Pressable style={styles.composeBtn} onPress={() => setComposeOpen(true)}>
           <Edit2 size={20} color={colors.textPrimary} />
         </Pressable>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-
         {/* Search */}
         <View style={styles.searchWrap}>
           <View style={styles.searchBar}>
             <Search size={15} color={colors.textTertiary} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
               placeholder="Search messages"
               placeholderTextColor={colors.textTertiary}
               value={search}
               onChangeText={setSearch}
               returnKeyType="search"
-              clearButtonMode="while-editing"
               autoCapitalize="none"
               autoCorrect={false}
             />
+            {search.length > 0 && (
+              <Pressable onPress={() => setSearch('')} hitSlop={8}>
+                <X size={14} color={colors.textTertiary} />
+              </Pressable>
+            )}
           </View>
         </View>
 
-        {/* Status notes — horizontal scroll */}
-        {!q && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.notesRow}
-          >
-            {STATUS_NOTES.map(note => (
-              <Pressable key={note.id} style={styles.noteItem} onPress={() => router.push(`/user/${note.username}` as any)}>
-                <View style={styles.noteAvatarWrap}>
-                  {note.avatarUrl ? (
-                    <Image source={{ uri: note.avatarUrl }} style={styles.noteAvatar} />
-                  ) : (
-                    <InitialsAvatar name={note.displayName} size={56} />
-                  )}
-                  <View style={styles.noteBubble}>
-                    <Text style={styles.noteBubbleText} numberOfLines={2}>{note.note}</Text>
-                  </View>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={styles.noteUsername} numberOfLines={1}>@{note.username}</Text>
-                  {isProUser(note.username) && <ProBadge size={11} />}
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
+        {/* Loading skeleton */}
+        {loading && (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
         )}
 
-        {/* Divider */}
-        {!q && <View style={styles.divider} />}
-
-        {/* Conversations */}
-        {filteredConvos.map(convo => (
-          <Pressable key={convo.id} style={styles.convoRow} onPress={() => router.push(`/conversation/${convo.id}` as any)}>
-            {/* Avatar */}
+        {/* Conversation list */}
+        {!loading && filteredConvos.map(convo => (
+          <Pressable
+            key={convo.otherUserId}
+            style={styles.convoRow}
+            onPress={() => openConversation(convo.otherUserId)}
+          >
             <View style={styles.avatarCol}>
-              {convo.isGroup ? (
-                <GroupAvatar participants={convo.participants ?? []} />
-              ) : convo.avatarUrl ? (
-                <View>
-                  <Image source={{ uri: convo.avatarUrl }} style={styles.avatar} />
-                  {convo.isOnline && <View style={styles.onlineDot} />}
-                </View>
-              ) : (
-                <InitialsAvatar name={convo.name} size={52} />
-              )}
+              <InitialsAvatar
+                name={convo.otherDisplayName || convo.otherUsername}
+                photoUrl={convo.otherAvatarUrl}
+                size={52}
+              />
             </View>
-
-            {/* Text */}
             <View style={styles.convoText}>
               <View style={styles.convoTopRow}>
-                <Text style={[styles.convoName, convo.unread > 0 && styles.convoNameUnread]}>
-                  {convo.name}
+                <Text style={[styles.convoName, convo.unreadCount > 0 && styles.convoNameUnread]}>
+                  {convo.otherDisplayName || convo.otherUsername}
                 </Text>
-                <Text style={[styles.convoTime, convo.unread > 0 && styles.convoTimeUnread]}>
-                  {convo.timestamp}
+                <Text style={[styles.convoTime, convo.unreadCount > 0 && styles.convoTimeUnread]}>
+                  {relativeTime(convo.lastMessageAt)}
                 </Text>
               </View>
               <View style={styles.convoBottomRow}>
                 <Text
-                  style={[styles.convoPreview, convo.unread > 0 && styles.convoPreviewUnread]}
+                  style={[styles.convoPreview, convo.unreadCount > 0 && styles.convoPreviewUnread]}
                   numberOfLines={1}
                 >
-                  {convo.lastMessage}
+                  {convo.isFromMe ? `You: ${convo.lastMessage}` : convo.lastMessage}
                 </Text>
-                {convo.unread > 0 && (
+                {convo.unreadCount > 0 && (
                   <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>{convo.unread}</Text>
+                    <Text style={styles.unreadText}>{convo.unreadCount}</Text>
                   </View>
                 )}
               </View>
@@ -249,59 +173,93 @@ export default function MessagesScreen() {
           </Pressable>
         ))}
 
+        {/* Empty state — no conversations yet */}
+        {!loading && conversations.length === 0 && !q && (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>No messages yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Tap the compose icon above to start a conversation.
+            </Text>
+          </View>
+        )}
+
         {/* No search results */}
-        {q && filteredConvos.length === 0 && (
+        {!loading && q && filteredConvos.length === 0 && (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>No conversations matching "{search}"</Text>
           </View>
         )}
 
-        {/* Message Requests */}
-        {!q && MESSAGE_REQUESTS.length > 0 && (
-          <>
-            <View style={styles.divider} />
-            <Pressable
-              style={styles.requestsRow}
-              onPress={() => setRequestsOpen(v => !v)}
-            >
-              <Text style={styles.requestsLabel}>
-                Requests{' '}
-                <Text style={styles.requestsCount}>({MESSAGE_REQUESTS.length})</Text>
-              </Text>
-              <ChevronRight
-                size={16}
-                color={colors.textSecondary}
-              />
-            </Pressable>
+        <View style={{ height: 40 }} />
+      </ScrollView>
 
-            {requestsOpen && MESSAGE_REQUESTS.map(req => (
-              <Pressable key={req.id} style={[styles.convoRow, styles.requestItem]}>
-                <View style={styles.avatarCol}>
-                  {req.avatarUrl ? (
-                    <Image source={{ uri: req.avatarUrl }} style={styles.avatar} />
-                  ) : (
-                    <InitialsAvatar name={req.displayName} size={52} />
-                  )}
-                </View>
-                <View style={styles.convoText}>
-                  <View style={styles.convoTopRow}>
-                    <Text style={styles.convoName}>{req.displayName}</Text>
-                    <Text style={styles.requestTag}>Not following</Text>
-                  </View>
-                  <Text style={styles.convoPreview} numberOfLines={1}>{req.preview}</Text>
+      {/* Compose modal — search users to start new DM */}
+      <Modal
+        visible={composeOpen}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setComposeOpen(false)}
+      >
+        <View style={styles.composeModal}>
+          {/* Compose header */}
+          <View style={styles.composeHeader}>
+            <Pressable onPress={() => { setComposeOpen(false); setUserSearch(''); setUserResults([]) }} style={styles.composeBack}>
+              <ArrowLeft size={20} color={colors.textSecondary} />
+            </Pressable>
+            <Text style={styles.composeTitle}>New Message</Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          {/* To: search */}
+          <View style={styles.composeToRow}>
+            <Text style={styles.composeToLabel}>To:</Text>
+            <TextInput
+              style={[styles.composeToInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+              placeholder="Search users…"
+              placeholderTextColor={colors.textTertiary}
+              value={userSearch}
+              onChangeText={handleUserSearch}
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searching && <ActivityIndicator size="small" color={colors.textTertiary} />}
+          </View>
+
+          <View style={styles.composeDivider} />
+
+          {/* User results */}
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {userResults.map(user => (
+              <Pressable
+                key={user.id}
+                style={styles.userResultRow}
+                onPress={() => openConversation(user.id)}
+              >
+                <InitialsAvatar
+                  name={user.displayName || user.username}
+                  photoUrl={user.avatarUrl}
+                  size={44}
+                />
+                <View style={styles.userResultInfo}>
+                  <Text style={styles.userResultName}>{user.displayName}</Text>
+                  <Text style={styles.userResultHandle}>@{user.username}</Text>
                 </View>
               </Pressable>
             ))}
-          </>
-        )}
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+            {userSearch.trim().length > 0 && !searching && userResults.length === 0 && (
+              <View style={styles.empty}>
+                <Text style={styles.emptyText}>No users found for "{userSearch}"</Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   )
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -326,7 +284,6 @@ const styles = StyleSheet.create({
   composeBtn: {
     padding: 4,
   },
-  // Search
   searchWrap: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -350,59 +307,10 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
   },
-  // Status notes
-  notesRow: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-    gap: 16,
-    flexDirection: 'row',
-  },
-  noteItem: {
-    alignItems: 'center',
-    width: 72,
-    gap: 6,
-  },
-  noteAvatarWrap: {
+  loadingWrap: {
+    paddingVertical: 48,
     alignItems: 'center',
   },
-  noteAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: colors.surface3,
-  },
-  noteBubble: {
-    backgroundColor: colors.surface1,
-    borderWidth: 1,
-    borderColor: colors.surface2,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    marginTop: -10,
-    marginLeft: 28,
-    maxWidth: 110,
-    minWidth: 60,
-  },
-  noteBubbleText: {
-    color: colors.textPrimary,
-    fontSize: 10,
-    lineHeight: 13,
-  },
-  noteUsername: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  // Divider
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: 8,
-  },
-  // Conversation rows
   convoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -415,24 +323,6 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: colors.surface3,
-  },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: colors.green,
-    borderWidth: 2,
-    borderColor: colors.bg,
   },
   convoText: {
     flex: 1,
@@ -489,44 +379,93 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  // Requests
-  requestsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  requestsLabel: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  requestsCount: {
-    color: colors.accent,
-  },
-  requestItem: {
-    backgroundColor: colors.surface1,
-    borderRadius: 10,
-    marginHorizontal: 12,
-    marginBottom: 6,
-  },
-  requestTag: {
-    color: colors.textTertiary,
-    fontSize: 11,
-    borderWidth: 1,
-    borderColor: colors.surface3,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  // Empty
   empty: {
     padding: 40,
     alignItems: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   emptyText: {
     color: colors.textTertiary,
     fontSize: 14,
+    textAlign: 'center',
+  },
+  // Compose modal
+  composeModal: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    paddingTop: Platform.OS === 'ios' ? 54 : 16,
+  },
+  composeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  composeBack: {
+    padding: 4,
+    width: 36,
+  },
+  composeTitle: {
+    flex: 1,
+    textAlign: 'center',
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  composeToRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  composeToLabel: {
+    color: colors.textTertiary,
+    fontSize: 15,
+    fontWeight: '600',
+    width: 28,
+  },
+  composeToInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 15,
+    padding: 0,
+  },
+  composeDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  userResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  userResultInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  userResultName: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  userResultHandle: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
 })

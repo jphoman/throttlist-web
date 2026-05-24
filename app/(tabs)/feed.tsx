@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import {
   View,
   StyleSheet,
@@ -14,11 +14,13 @@ import {
 } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
-import { Bell, Compass, ChevronDown } from '@/components/Icons'
+import { Bell, Compass, ChevronDown, X as XIcon } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFeed as fetchFeedFromSupabase, fetchFollowedFeed, fetchUserBuilds } from '@/lib/supabaseQueries'
+import { fetchFeed as fetchFeedFromSupabase, fetchFollowedFeed, fetchFollowedBuilds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
+import { BUILD_CATEGORIES } from '@/constants/buildTypes'
+import { useFeedFilters } from '@/store/feedFilters'
 import PostCard from '@/components/PostCard'
 import type { Part } from '@/types'
 
@@ -26,19 +28,6 @@ const HEADER_HEIGHT = Platform.OS === 'ios' ? 62 : 50
 const SORT_HEADER_HEIGHT = 36
 const COMBINED_HEADER_HEIGHT = HEADER_HEIGHT + SORT_HEADER_HEIGHT
 
-type SortMode = 'for-you' | 'most-recent'
-
-const BUILD_TYPES = [
-  { id: 'all', label: 'All Types' },
-  { id: 'cafe_racer', label: 'Café Racer' },
-  { id: 'scrambler', label: 'Scrambler' },
-  { id: 'tracker', label: 'Tracker' },
-  { id: 'bobber', label: 'Bobber' },
-  { id: 'chopper', label: 'Chopper' },
-  { id: 'adventure', label: 'Adventure' },
-  { id: 'bagger', label: 'Bagger' },
-  { id: 'other', label: 'Other' },
-]
 
 export default function FeedScreen() {
   const queryClient = useQueryClient()
@@ -46,27 +35,37 @@ export default function FeedScreen() {
   const userId = authUser?.id ?? ''
 
   const [refreshing, setRefreshing] = useState(false)
-  const [sortMode, setSortMode] = useState<SortMode>('most-recent')
-  const [buildTypeFilter, setBuildTypeFilter] = useState('all')
   const [typePickerOpen, setTypePickerOpen] = useState(false)
   const [typeSearch, setTypeSearch] = useState('')
-  const [buildFilter, setBuildFilter] = useState('')
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
   const [buildSearch, setBuildSearch] = useState('')
   const scrollY = useRef(new Animated.Value(0)).current
+
+  // Persistent filter state — survives navigation via Zustand
+  const { sortMode, buildFilter, buildTypeFilter, setSortMode, setBuildFilter, setBuildTypeFilter } = useFeedFilters()
+
+  // Normalize: if the stored value isn't a known category, treat as unset (no flash)
+  const effectiveTypeFilter = BUILD_CATEGORIES.some(c => c.id === buildTypeFilter) ? buildTypeFilter : ''
+
+  // Keep the store clean — clear any stale/unknown value after render
+  useEffect(() => {
+    if (buildTypeFilter !== effectiveTypeFilter) {
+      setBuildTypeFilter('')
+    }
+  }, [buildTypeFilter, effectiveTypeFilter, setBuildTypeFilter])
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['feed-posts', sortMode, userId],
     queryFn: () =>
       sortMode === 'for-you' && userId
         ? fetchFollowedFeed(userId, 40)
-        : fetchFeedFromSupabase(40),
+        : fetchFeedFromSupabase(40, 0, userId || undefined),
     enabled: sortMode === 'most-recent' || !!userId,
   })
 
   const { data: myBuilds = [] } = useQuery({
-    queryKey: ['my-builds', userId],
-    queryFn: () => fetchUserBuilds(userId),
+    queryKey: ['followed-builds-list', userId],
+    queryFn: () => fetchFollowedBuilds(userId),
     enabled: !!userId,
   })
 
@@ -86,15 +85,21 @@ export default function FeedScreen() {
     ).slice(0, 10)
   }, [myBuilds, buildSearch])
 
+  // Derive available categories from posts currently in the feed
+  const availableCategories = useMemo(() => {
+    const typesInFeed = new Set(posts.map(p => p.buildType).filter(Boolean))
+    return BUILD_CATEGORIES.filter(c => typesInFeed.has(c.id))
+  }, [posts])
+
   const displayedPosts = useMemo(() => {
     let result = [...posts]
     if (buildFilter) result = result.filter(p => p.buildId === buildFilter)
-    if (buildTypeFilter !== 'all') result = result.filter(p => p.buildType === buildTypeFilter)
+    if (effectiveTypeFilter) result = result.filter(p => p.buildType === effectiveTypeFilter)
     if (sortMode === 'most-recent') {
       result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }
     return result
-  }, [posts, sortMode, buildTypeFilter, buildFilter])
+  }, [posts, sortMode, effectiveTypeFilter, buildFilter])
 
   const headerTranslate = scrollY.interpolate({
     inputRange: [0, 70],
@@ -107,15 +112,15 @@ export default function FeedScreen() {
     extrapolate: 'clamp',
   })
 
-  const selectedTypeDef = BUILD_TYPES.find(t => t.id === buildTypeFilter) ?? BUILD_TYPES[0]
-  const isTypeFiltered = buildTypeFilter !== 'all'
+  const selectedTypeDef = BUILD_CATEGORIES.find(t => t.id === effectiveTypeFilter)
+  const isTypeFiltered = !!effectiveTypeFilter
   const selectedBuildDef = myBuilds.find(b => b.id === buildFilter)
   const isBuildFiltered = !!buildFilter
 
   const filteredTypes = useMemo(() => {
     const q = typeSearch.toLowerCase()
-    return BUILD_TYPES.filter(t => !q || t.label.toLowerCase().includes(q))
-  }, [typeSearch])
+    return availableCategories.filter(t => !q || t.label.toLowerCase().includes(q))
+  }, [typeSearch, availableCategories])
 
   function renderEmptyState() {
     const isForYouEmpty = sortMode === 'for-you' && !isTypeFiltered && !isBuildFiltered
@@ -126,7 +131,7 @@ export default function FeedScreen() {
           {isForYouEmpty
             ? 'Follow some builds'
             : isTypeFiltered
-            ? `No ${selectedTypeDef.label} posts yet`
+            ? `No ${selectedTypeDef?.label ?? ''} posts yet`
             : 'No posts yet'}
         </Text>
         <Text style={styles.emptyBody}>
@@ -208,23 +213,31 @@ export default function FeedScreen() {
           {myBuilds.length > 0 && (
             <Pressable
               style={[styles.sortPill, isBuildFiltered && styles.sortPillActive]}
-              onPress={() => setBuildPickerOpen(true)}
+              onPress={() => isBuildFiltered ? setBuildFilter('') : setBuildPickerOpen(true)}
             >
               <Text style={[styles.sortPillText, isBuildFiltered && styles.sortPillTextActive]}>
-                {isBuildFiltered ? (selectedBuildDef?.nickname || selectedBuildDef?.model || 'Build') : 'My Builds'}
+                {isBuildFiltered ? (selectedBuildDef?.nickname || selectedBuildDef?.model || 'Build') : 'Builds'}
               </Text>
-              <ChevronDown size={11} color={isBuildFiltered ? '#fff' : colors.textTertiary} />
+              {isBuildFiltered
+                ? <XIcon size={11} color="#fff" />
+                : <ChevronDown size={11} color={colors.textTertiary} />}
             </Pressable>
           )}
-          <Pressable
-            style={[styles.sortPill, isTypeFiltered && styles.sortPillActive]}
-            onPress={() => setTypePickerOpen(true)}
-          >
-            <Text style={[styles.sortPillText, isTypeFiltered && styles.sortPillTextActive]}>
-              {isTypeFiltered ? selectedTypeDef.label : 'Build Type'}
-            </Text>
-            <ChevronDown size={11} color={isTypeFiltered ? '#fff' : colors.textTertiary} />
-          </Pressable>
+          {availableCategories.length > 0 && (
+            <Pressable
+              style={[styles.sortPill, isTypeFiltered && styles.sortPillActive]}
+              onPress={() => effectiveTypeFilter ? setBuildTypeFilter('') : setTypePickerOpen(true)}
+            >
+              <Text style={[styles.sortPillText, isTypeFiltered && styles.sortPillTextActive]}>
+                {isTypeFiltered
+                  ? `${selectedTypeDef?.icon ?? ''} ${selectedTypeDef?.label ?? 'Build Type'}`.trim()
+                  : 'Build Type'}
+              </Text>
+              {isTypeFiltered
+                ? <XIcon size={11} color="#fff" />
+                : <ChevronDown size={11} color={colors.textTertiary} />}
+            </Pressable>
+          )}
         </View>
       </Animated.View>
 
@@ -240,25 +253,25 @@ export default function FeedScreen() {
             <TouchableWithoutFeedback>
               <View style={styles.pickerMenu}>
                 <Text style={styles.pickerTitle}>BUILD TYPE</Text>
-                <TextInput
-                  style={styles.pickerSearch}
-                  placeholder="Search types…"
-                  placeholderTextColor={colors.textTertiary}
-                  value={typeSearch}
-                  onChangeText={setTypeSearch}
-                  autoCorrect={false}
-                />
                 <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
+                  {effectiveTypeFilter && (
+                    <Pressable
+                      style={styles.pickerRow}
+                      onPress={() => { setBuildTypeFilter(''); setTypePickerOpen(false); setTypeSearch('') }}
+                    >
+                      <Text style={[styles.pickerRowText, { color: colors.textTertiary }]}>All Types</Text>
+                    </Pressable>
+                  )}
                   {filteredTypes.map(type => (
                     <Pressable
                       key={type.id}
-                      style={[styles.pickerRow, buildTypeFilter === type.id && styles.pickerRowActive]}
+                      style={[styles.pickerRow, effectiveTypeFilter === type.id && styles.pickerRowActive]}
                       onPress={() => { setBuildTypeFilter(type.id); setTypePickerOpen(false); setTypeSearch('') }}
                     >
-                      <Text style={[styles.pickerRowText, buildTypeFilter === type.id && styles.pickerRowTextActive]}>
-                        {type.label}
+                      <Text style={[styles.pickerRowText, effectiveTypeFilter === type.id && styles.pickerRowTextActive]}>
+                        {type.icon}{'  '}{type.label}
                       </Text>
-                      {buildTypeFilter === type.id && <Text style={styles.pickerCheck}>✓</Text>}
+                      {effectiveTypeFilter === type.id && <Text style={styles.pickerCheck}>✓</Text>}
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -279,7 +292,7 @@ export default function FeedScreen() {
           <View style={styles.pickerBackdrop}>
             <TouchableWithoutFeedback>
               <View style={styles.pickerMenu}>
-                <Text style={styles.pickerTitle}>MY BUILDS</Text>
+                <Text style={styles.pickerTitle}>BUILDS I FOLLOW</Text>
                 <TextInput
                   style={styles.pickerSearch}
                   placeholder="Search builds…"

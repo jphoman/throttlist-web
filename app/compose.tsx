@@ -62,14 +62,15 @@ export default function ComposeScreen() {
     setError(null)
     try {
       const photoUrl = await uploadPhoto(photoUri)
-      if (!photoUrl) throw new Error('Photo upload failed. Make sure the "posts" storage bucket exists.')
+      if (!photoUrl) throw new Error('Photo upload failed. Check that the "posts" storage bucket exists and has the right policies.')
 
-      await createPost({
+      const newPost = await createPost({
         user_id: userId,
         build_id: selectedBuildId || null,
         photos: [photoUrl],
         caption: caption.trim() || null,
       })
+      if (!newPost) throw new Error('Failed to save post. Check the posts table RLS policies.')
 
       await queryClient.invalidateQueries({ queryKey: ['feed-posts'] })
       router.replace('/feed')

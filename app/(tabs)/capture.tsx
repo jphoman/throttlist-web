@@ -11,11 +11,25 @@ import {
 import { router } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import { useQuery } from '@tanstack/react-query'
-import { X, Zap, Settings, Gallery } from '@/components/Icons'
+import { X, Zap, Settings, Gallery, Plus } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { fetchUserBuilds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
+
+// Web-only hidden file input for photo library access
+let webFileInput: HTMLInputElement | null = null
+function getWebFileInput(): HTMLInputElement {
+  if (!webFileInput) {
+    webFileInput = document.createElement('input')
+    webFileInput.type = 'file'
+    webFileInput.accept = 'image/*'
+    webFileInput.multiple = false
+    webFileInput.style.display = 'none'
+    document.body.appendChild(webFileInput)
+  }
+  return webFileInput
+}
 
 export default function CaptureScreen() {
   const { user: authUser } = useAuth()
@@ -65,7 +79,43 @@ export default function CaptureScreen() {
     }
   }, [])
 
+  function navigateWithPhoto(photoUri: string) {
+    if (myBuilds.length === 0) {
+      // No builds yet — go create one first, passing the photo along
+      router.push({
+        pathname: '/add-build',
+        params: { returnTo: 'compose', photoUri },
+      })
+    } else {
+      router.push({
+        pathname: '/compose',
+        params: { photoUri, buildId: selectedBuildId ?? '' },
+      })
+    }
+  }
+
   async function handlePickFromGallery() {
+    if (Platform.OS === 'web') {
+      const input = getWebFileInput()
+      // Remove any previous listener before adding a fresh one
+      const fresh = input.cloneNode() as HTMLInputElement
+      fresh.accept = 'image/*'
+      fresh.multiple = false
+      fresh.style.display = 'none'
+      webFileInput = fresh
+      document.body.appendChild(fresh)
+
+      fresh.onchange = () => {
+        const file = fresh.files?.[0]
+        if (!file) return
+        const uri = URL.createObjectURL(file)
+        navigateWithPhoto(uri)
+      }
+      fresh.click()
+      return
+    }
+
+    // Native (iOS/Android)
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -73,10 +123,7 @@ export default function CaptureScreen() {
       quality: 0.85,
     })
     if (!result.canceled && result.assets[0]) {
-      router.push({
-        pathname: '/compose',
-        params: { photoUri: result.assets[0].uri, buildId: selectedBuildId ?? '' },
-      })
+      navigateWithPhoto(result.assets[0].uri)
     }
   }
 
@@ -90,10 +137,7 @@ export default function CaptureScreen() {
       canvas.height = video.videoHeight
       canvas.getContext('2d')?.drawImage(video, 0, 0)
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
-      router.push({
-        pathname: '/compose',
-        params: { photoUri: dataUrl, buildId: selectedBuildId ?? '' },
-      })
+      navigateWithPhoto(dataUrl)
       return
     }
     handlePickFromGallery()
@@ -126,37 +170,64 @@ export default function CaptureScreen() {
         <View style={styles.shutterInner} />
       </Pressable>
 
+      {/* No-builds overlay */}
+      {myBuilds.length === 0 && (
+        <Pressable
+          style={styles.noBuildsOverlay}
+          onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
+        >
+          <View style={styles.noBuildsCard}>
+            <View style={styles.noBuildsPlus}>
+              <Plus size={22} color="#fff" />
+            </View>
+            <Text style={styles.noBuildsText}>Add a build{'\n'}to start posting</Text>
+          </View>
+        </Pressable>
+      )}
+
       {/* Build selector — bottom right */}
-      <ScrollView
-        style={styles.buildScroll}
-        contentContainerStyle={styles.buildList}
-        showsVerticalScrollIndicator={false}
-      >
-        {myBuilds.map(build => {
-          const isSelected = build.id === selectedBuildId
-          return (
-            <Pressable
-              key={build.id}
-              style={styles.buildItem}
-              onPress={() => setSelectedBuildId(build.id)}
-            >
-              {build.coverPhotoUrl ? (
-                <Image
-                  source={{ uri: build.coverPhotoUrl }}
-                  style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}
-                />
-              ) : (
-                <View style={[styles.buildThumb, styles.buildThumbFallback, isSelected && styles.buildThumbSelected]}>
-                  <InitialsAvatar name={build.nickname || build.model} size={40} />
-                </View>
-              )}
-              <Text style={[styles.buildName, isSelected && styles.buildNameSelected]} numberOfLines={1}>
-                {build.nickname || build.model}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </ScrollView>
+      <View style={styles.buildScrollWrap}>
+        <ScrollView
+          style={styles.buildScroll}
+          contentContainerStyle={styles.buildList}
+          showsVerticalScrollIndicator={false}
+        >
+          {myBuilds.map(build => {
+            const isSelected = build.id === selectedBuildId
+            return (
+              <Pressable
+                key={build.id}
+                style={styles.buildItem}
+                onPress={() => setSelectedBuildId(build.id)}
+              >
+                {build.coverPhotoUrl ? (
+                  <Image
+                    source={{ uri: build.coverPhotoUrl }}
+                    style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}
+                  />
+                ) : (
+                  <View style={[styles.buildThumb, styles.buildThumbFallback, isSelected && styles.buildThumbSelected]}>
+                    <InitialsAvatar name={build.nickname || build.model} size={40} />
+                  </View>
+                )}
+                <Text style={[styles.buildName, isSelected && styles.buildNameSelected]} numberOfLines={1}>
+                  {build.nickname || build.model}
+                </Text>
+              </Pressable>
+            )
+          })}
+          {/* Always show + to add another build */}
+          <Pressable
+            style={styles.buildItem}
+            onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
+          >
+            <View style={[styles.buildThumb, styles.buildThumbAdd]}>
+              <Plus size={20} color={colors.textTertiary} />
+            </View>
+            <Text style={styles.buildName} numberOfLines={1}>Add</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
     </View>
   )
 }
@@ -195,13 +266,14 @@ const styles = StyleSheet.create({
     borderWidth: 4, borderColor: '#fff',
     backgroundColor: 'transparent',
   },
-  buildScroll: {
+  buildScrollWrap: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
     right: 16,
-    maxHeight: 160,
+    maxHeight: 200,
     width: 68,
   },
+  buildScroll: { width: 68 },
   buildList: { gap: 10, alignItems: 'flex-end', paddingBottom: 4 },
   buildItem: { alignItems: 'center', gap: 3 },
   buildThumb: {
@@ -210,7 +282,41 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   buildThumbFallback: { backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
+  buildThumbAdd: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 1,
+  },
   buildThumbSelected: { borderColor: colors.accent, opacity: 1 },
   buildName: { color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: '600', textAlign: 'center', width: 58 },
   buildNameSelected: { color: '#fff' },
+  noBuildsOverlay: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 56 : 36,
+    right: 80,
+  },
+  noBuildsCard: {
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  noBuildsPlus: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  noBuildsText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
 })

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Feather, Ionicons, FontAwesome5 } from '@expo/vector-icons'
+import { Feather, Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons'
 import Svg, { Circle, Path } from 'react-native-svg'
 
 interface IconProps {
@@ -176,6 +176,28 @@ export function Zap({ size = 24, color = '#000' }: IconProps) {
 
 export function Gallery({ size = 24, color = '#000' }: IconProps) {
   return <Feather name="image" size={size} color={color} />
+}
+
+export function Check({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="check" size={size} color={color} />
+}
+
+const CATEGORY_ICON_MAP: Record<string, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+  motorcycles: 'motorbike',
+  cars:        'car-side',
+  bicycles:    'bicycle',
+  drones:      'drone',
+  pc_gaming:   'monitor',
+  audio_hifi:  'speaker',
+  keyboards:   'keyboard',
+  guitars:     'guitar-electric',
+  '3d_printing': 'printer-3d',
+  camping:     'tent',
+}
+
+export function CategoryIcon({ id, size = 24, color = '#666' }: { id: string; size?: number; color?: string }) {
+  const name = CATEGORY_ICON_MAP[id] ?? 'wrench'
+  return <MaterialCommunityIcons name={name} size={size} color={color} />
 }
 
 export function ProBadge({ size = 16 }: { size?: number }) {

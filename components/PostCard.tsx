@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
 import {
   View,
   Text,
@@ -8,15 +8,15 @@ import {
   Dimensions,
   ScrollView,
   Linking,
+  ActivityIndicator,
 } from 'react-native'
 import Svg, { Path as SvgPath } from 'react-native-svg'
 import { Heart, MessageCircle, Share2, ExternalLink, X, ProBadge, Tag } from '@/components/Icons'
 import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import { router } from 'expo-router'
-import { isProUser, getPostComments } from '@/lib/data'
-import type { Comment } from '@/types'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import CommentSheet from '@/components/CommentSheet'
+import { fetchBuildParts } from '@/lib/supabaseQueries'
 import type { Post, Part } from '@/types'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -44,18 +44,11 @@ export default function PostCard({
   onShopPress,
 }: PostCardProps) {
   const [liked, setLiked] = useState(false)
-  const [likedComments, setLikedComments] = useState<Set<string>>(new Set())
   const [photoIndex, setPhotoIndex] = useState(0)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [commentSheetOpen, setCommentSheetOpen] = useState(false)
-
-  function toggleCommentLike(id: string) {
-    setLikedComments(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
+  const [fetchedParts, setFetchedParts] = useState<Part[] | null>(null)
+  const [partsLoading, setPartsLoading] = useState(false)
 
   const photos: string[] = (() => {
     try { return JSON.parse(post.photos) } catch { return [] }
@@ -63,20 +56,27 @@ export default function PostCard({
   const taggedIds: string[] = (() => {
     try { return JSON.parse(post.taggedPartIds) } catch { return [] }
   })()
-  const taggedParts = parts.filter(p => taggedIds.includes(p.id))
 
-  // Priority: (1) post creator's top-liked comment, (2) most-liked others, (3) most recent
-  const previewComments: Comment[] = useMemo(() => {
-    const all = getPostComments(post.id)
-    const byLikes = (a: Comment, b: Comment) =>
-      b.likes - a.likes || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    const creator = all.filter(c => c.authorUserId === post.userId).sort(byLikes)
-    const others  = all.filter(c => c.authorUserId !== post.userId).sort(byLikes)
-    const result: Comment[] = []
-    if (creator.length > 0) result.push(creator[0])
-    result.push(...others.slice(0, 2 - result.length))
-    return result
-  }, [post.id, post.userId])
+  // Use pre-passed parts if available, otherwise use lazily fetched ones
+  const resolvedParts = fetchedParts ?? parts
+  const taggedParts = resolvedParts.filter(p => taggedIds.includes(p.id))
+  const tagCount = taggedIds.length
+
+  async function handleTagBadgePress() {
+    if (tagsOpen) { setTagsOpen(false); return }
+    // Fetch parts on first open if not already loaded
+    if (fetchedParts === null && post.buildId) {
+      setPartsLoading(true)
+      try {
+        const loaded = await fetchBuildParts(post.buildId)
+        setFetchedParts(loaded)
+      } finally {
+        setPartsLoading(false)
+      }
+    }
+    setTagsOpen(true)
+  }
+
 
   function handleLike() {
     setLiked(!liked)
@@ -119,7 +119,7 @@ export default function PostCard({
             <View>
               <View style={styles.usernameRow}>
                 <Text style={styles.overlayHandle}>@{post.username}</Text>
-                {isProUser(post.username) && <ProBadge size={12} />}
+                {post.isPro && <ProBadge size={12} />}
               </View>
               <Text style={styles.overlayBuild} numberOfLines={1}>
                 {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
@@ -127,8 +127,8 @@ export default function PostCard({
             </View>
           </Pressable>
 
-          {taggedParts.length > 0 && (
-            <Pressable style={styles.partsBadge} onPress={() => setTagsOpen(o => !o)}>
+          {tagCount > 0 && (
+            <Pressable style={styles.partsBadge} onPress={handleTagBadgePress}>
               <Svg width={48} height={20} viewBox="0 0 48 20">
                 <SvgPath
                   d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
@@ -137,7 +137,7 @@ export default function PostCard({
                 />
               </Svg>
               <View style={styles.partsBadgeContent}>
-                <Text style={styles.partsBadgeText}>{taggedParts.length}</Text>
+                <Text style={styles.partsBadgeText}>{tagCount}</Text>
               </View>
             </Pressable>
           )}
@@ -174,7 +174,7 @@ export default function PostCard({
             {timeAgo(post.createdAt)}
           </Text>
 
-          {tagsOpen && taggedParts.length > 0 && (
+          {tagsOpen && (
             <Pressable style={styles.tagsOverlay} onPress={() => setTagsOpen(false)}>
               <Pressable onPress={e => e.stopPropagation()}>
                 <View style={styles.tagsPanel}>
@@ -184,39 +184,49 @@ export default function PostCard({
                       <X size={16} color={colors.textSecondary} />
                     </Pressable>
                   </View>
-                  {taggedParts.map(part => (
-                    <Pressable
-                      key={part.id}
-                      style={styles.tagRow}
-                      onPress={() => {
-                        if (part.type === 'linkable' && part.sourceUrl) {
-                          Linking.openURL(part.sourceUrl)
-                          onShopPress?.(part)
-                        } else {
-                          onPartPress?.(part)
-                        }
-                        setTagsOpen(false)
-                      }}
-                    >
-                      <View style={[
-                        styles.tagDot,
-                        part.type === 'linkable' && { backgroundColor: colors.accent },
-                        part.type === 'reference' && { backgroundColor: colors.reference },
-                      ]} />
-                      <View style={styles.tagInfo}>
-                        <Text
-                          style={[styles.tagName, part.type === 'linkable' && { color: colors.accent }]}
-                          numberOfLines={1}
-                        >
-                          {part.name}
-                        </Text>
-                        {part.category && <Text style={styles.tagCategory}>{part.category}</Text>}
-                      </View>
-                      {part.type === 'linkable' && part.sourceUrl && (
-                        <ExternalLink size={13} color={colors.accent} />
-                      )}
-                    </Pressable>
-                  ))}
+                  {partsLoading ? (
+                    <View style={styles.tagsLoading}>
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    </View>
+                  ) : taggedParts.length > 0 ? (
+                    taggedParts.map(part => (
+                      <Pressable
+                        key={part.id}
+                        style={styles.tagRow}
+                        onPress={() => {
+                          if (part.type === 'linkable' && part.sourceUrl) {
+                            Linking.openURL(part.sourceUrl)
+                            onShopPress?.(part)
+                          } else {
+                            onPartPress?.(part)
+                          }
+                          setTagsOpen(false)
+                        }}
+                      >
+                        <View style={[
+                          styles.tagDot,
+                          part.type === 'linkable' && { backgroundColor: colors.accent },
+                          part.type === 'reference' && { backgroundColor: colors.reference },
+                        ]} />
+                        <View style={styles.tagInfo}>
+                          <Text
+                            style={[styles.tagName, part.type === 'linkable' && { color: colors.accent }]}
+                            numberOfLines={1}
+                          >
+                            {part.name}
+                          </Text>
+                          {part.category && <Text style={styles.tagCategory}>{part.category}</Text>}
+                        </View>
+                        {part.type === 'linkable' && part.sourceUrl && (
+                          <ExternalLink size={13} color={colors.accent} />
+                        )}
+                      </Pressable>
+                    ))
+                  ) : (
+                    <View style={styles.tagsLoading}>
+                      <Text style={{ color: colors.textTertiary, fontSize: 13 }}>No parts found</Text>
+                    </View>
+                  )}
                 </View>
               </Pressable>
             </Pressable>
@@ -232,7 +242,7 @@ export default function PostCard({
           <View style={styles.headerInfo}>
             <View style={styles.usernameRow}>
               <Text style={styles.handle}>@{post.username}</Text>
-              {isProUser(post.username) && <ProBadge size={12} />}
+              {post.isPro && <ProBadge size={12} />}
             </View>
             <Text style={styles.buildName} numberOfLines={1}>
               {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
@@ -251,24 +261,6 @@ export default function PostCard({
           </Text>
         )}
 
-        {previewComments.map(c => {
-          const isCommentLiked = likedComments.has(c.id)
-          return (
-            <View key={c.id} style={styles.commentRow}>
-              <Text style={styles.commentText}>
-                <Text style={styles.metaUsername} onPress={() => router.push(`/user/${c.username}`)}>{c.username} </Text>
-                {c.body}
-              </Text>
-              <Pressable onPress={() => toggleCommentLike(c.id)} hitSlop={8}>
-                <Heart
-                  size={16}
-                  color={isCommentLiked ? colors.accent : colors.textTertiary}
-                  fill={isCommentLiked ? colors.accent : 'none'}
-                />
-              </Pressable>
-            </View>
-          )
-        })}
 
         {post.commentCount > 0 && (
           <Pressable onPress={openComments}>
@@ -435,6 +427,10 @@ const styles = StyleSheet.create({
   },
   tagsPanelClose: {
     padding: 4,
+  },
+  tagsLoading: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   tagRow: {
     flexDirection: 'row',

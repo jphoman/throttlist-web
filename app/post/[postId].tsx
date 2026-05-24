@@ -12,9 +12,11 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Heart, MessageCircle, Share2, ExternalLink, MoreHorizontal, ProBadge } from '@/components/Icons'
-import { getPost, listParts, listComments, isProUser } from '@/lib/data'
-import { colors, timeAgo, formatFollowers, MOCK_USER_ID } from '@/constants/throttlist'
+import Svg, { Path as SvgPath } from 'react-native-svg'
+import { ArrowLeft, Heart, MessageCircle, Share2, ExternalLink, MoreHorizontal, ProBadge, X as XIcon } from '@/components/Icons'
+import { fetchPost, fetchBuildParts, fetchComments } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import CommentSheet from '@/components/CommentSheet'
 import PostEditSheet from '@/components/PostEditSheet'
@@ -34,22 +36,25 @@ export default function PostDetailScreen() {
   const [localCaption, setLocalCaption] = useState<string | null>(null)
   const [localTaggedIds, setLocalTaggedIds] = useState<string[] | null>(null)
   const [deleted, setDeleted] = useState(false)
+  const [tagsSheetOpen, setTagsSheetOpen] = useState(false)
+
+  const { user: authUser } = useAuth()
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['post', postId],
-    queryFn: () => getPost(postId!),
+    queryFn: () => fetchPost(postId!),
     enabled: !!postId,
   })
 
   const { data: allParts = [] } = useQuery({
     queryKey: ['parts', post?.buildId],
-    queryFn: () => listParts({ buildId: post!.buildId }),
+    queryFn: () => fetchBuildParts(post!.buildId),
     enabled: !!post?.buildId,
   })
 
   const { data: fetchedComments = [] } = useQuery({
     queryKey: ['comments', postId],
-    queryFn: () => listComments({ targetId: postId! }),
+    queryFn: () => fetchComments(postId!),
     enabled: !!postId,
   })
 
@@ -75,7 +80,7 @@ export default function PostDetailScreen() {
     )
   }
 
-  const isOwner = post.userId === MOCK_USER_ID
+  const isOwner = post.userId === authUser?.id
   const displayCaption = localCaption ?? post.caption
   const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
   const effectiveTaggedIds = localTaggedIds ?? (() => { try { return JSON.parse(post.taggedPartIds) } catch { return [] } })()
@@ -146,7 +151,7 @@ export default function PostDetailScreen() {
               <View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text style={styles.overlayHandle}>@{post.username}</Text>
-                  {isProUser(post.username) && <ProBadge size={12} />}
+                  {post.isPro && <ProBadge size={12} />}
                 </View>
                 <Text style={styles.overlayBuild} numberOfLines={1}>
                   {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
@@ -181,7 +186,7 @@ export default function PostDetailScreen() {
               <InitialsAvatar name={post.buildNickname ?? ''} size={34} />
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Text style={styles.overlayHandle}>@{post.username}</Text>
-                {isProUser(post.username) && <ProBadge size={12} />}
+                {post.isPro && <ProBadge size={12} />}
               </View>
             </Pressable>
           </View>
@@ -205,7 +210,22 @@ export default function PostDetailScreen() {
             <Text style={styles.actionCount}>{post.commentCount}</Text>
           </Pressable>
 
-          <Pressable style={styles.actionBtn} onPress={() => setShareSheetOpen(true)}>
+          {taggedParts.length > 0 && (
+            <Pressable style={styles.actionBtn} onPress={() => setTagsSheetOpen(v => !v)}>
+              <View style={styles.tagBadge}>
+                <Svg width={36} height={16} viewBox="0 0 48 20">
+                  <SvgPath
+                    d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
+                    fill={colors.accent}
+                    fillRule="evenodd"
+                  />
+                </Svg>
+                <Text style={styles.tagBadgeText}>{taggedParts.length}</Text>
+              </View>
+            </Pressable>
+          )}
+
+          <Pressable style={[styles.actionBtn, { marginLeft: 'auto' }]} onPress={() => setShareSheetOpen(true)}>
             <Share2 size={24} color={colors.textPrimary} />
           </Pressable>
         </View>
@@ -289,6 +309,48 @@ export default function PostDetailScreen() {
 
         <View style={{ height: 48 }} />
       </ScrollView>
+
+      {/* Tags sheet */}
+      {tagsSheetOpen && taggedParts.length > 0 && (
+        <Pressable style={styles.tagsOverlay} onPress={() => setTagsSheetOpen(false)}>
+          <Pressable onPress={e => e.stopPropagation()}>
+            <View style={styles.tagsSheet}>
+              <View style={styles.tagsSheetHeader}>
+                <Text style={styles.tagsSheetTitle}>Tagged Parts</Text>
+                <Pressable onPress={() => setTagsSheetOpen(false)} style={styles.tagsSheetClose}>
+                  <XIcon size={16} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              {taggedParts.map(part => (
+                <Pressable
+                  key={part.id}
+                  style={styles.tagsSheetRow}
+                  onPress={() => {
+                    if (part.type === 'linkable' && part.sourceUrl) {
+                      Linking.openURL(part.sourceUrl)
+                    }
+                    setTagsSheetOpen(false)
+                  }}
+                >
+                  <View style={[
+                    styles.tagsSheetDot,
+                    part.type === 'linkable' && { backgroundColor: colors.accent },
+                  ]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.tagsSheetPartName, part.type === 'linkable' && { color: colors.accent }]} numberOfLines={1}>
+                      {part.name}
+                    </Text>
+                    {part.category ? <Text style={styles.tagsSheetCategory}>{part.category}</Text> : null}
+                  </View>
+                  {part.type === 'linkable' && part.sourceUrl && (
+                    <ExternalLink size={14} color={colors.accent} />
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          </Pressable>
+        </Pressable>
+      )}
 
       <CommentSheet
         visible={commentSheetOpen}
@@ -540,5 +602,86 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.surface3,
+  },
+  // Tag badge in action bar
+  tagBadge: {
+    position: 'relative',
+    width: 36,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tagBadgeText: {
+    position: 'absolute',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    textAlignVertical: 'center',
+    lineHeight: 16,
+  },
+  // Tags bottom sheet
+  tagsOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    top: 0,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  tagsSheet: {
+    backgroundColor: colors.surface1,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: colors.surface2,
+  },
+  tagsSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface2,
+  },
+  tagsSheetTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tagsSheetClose: {
+    padding: 4,
+  },
+  tagsSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface2 + '66',
+  },
+  tagsSheetDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.surface3,
+    flexShrink: 0,
+  },
+  tagsSheetPartName: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tagsSheetCategory: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
   },
 })

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   View,
   Text,
@@ -28,8 +28,17 @@ import {
   Send,
   ProBadge,
 } from '@/components/Icons'
-import { listBuilds, listUsers, listParts, listPosts, listComments, listBuildFollowers, addComment, isProUser } from '@/lib/data'
-import { colors, formatFollowers, MOCK_USER_ID } from '@/constants/throttlist'
+import {
+  fetchBuild,
+  fetchProfileByUsername,
+  fetchBuildPosts,
+  fetchBuildParts,
+  fetchBuildFollowers,
+  fetchFollowedBuildIds,
+  toggleBuildFollow,
+} from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors, formatFollowers } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import BuildEditSheet from '@/components/BuildEditSheet'
 import PostEditSheet from '@/components/PostEditSheet'
@@ -49,25 +58,21 @@ function relativeTime(iso: string): string {
 }
 
 async function fetchBuildProfile(username: string, slug: string) {
-  const allUsers = await listUsers()
-  const user = allUsers.find(u => u.username === username)
-  if (!user) return null
-
-  const builds = await listBuilds({ userId: user.id, slug })
-  const build = builds[0]
-  if (!build) return null
-
-  const [parts, posts, comments] = await Promise.all([
-    listParts({ buildId: build.id }),
-    listPosts({ buildId: build.id }),
-    listComments({ targetId: build.id }),
+  const [build, profile] = await Promise.all([
+    fetchBuild(username, slug),
+    fetchProfileByUsername(username),
   ])
-
-  return { user, build, parts, posts, comments }
+  if (!build || !profile) return null
+  const [posts, parts] = await Promise.all([
+    fetchBuildPosts(build.id),
+    fetchBuildParts(build.id),
+  ])
+  return { user: profile, build, posts, parts, comments: [] as Comment[] }
 }
 
 export default function BuildProfileScreen() {
   const { username, slug } = useLocalSearchParams<{ username: string; slug: string }>()
+  const { user: authUser } = useAuth()
   const [isFollowing, setIsFollowing] = useState(false)
   const [activeTab, setActiveTab] = useState<BuildTab>('posts')
   const [buildEditOpen, setBuildEditOpen] = useState(false)
@@ -88,11 +93,23 @@ export default function BuildProfileScreen() {
     enabled: !!username && !!slug,
   })
 
+  const { data: followedIds } = useQuery({
+    queryKey: ['followed-build-ids', authUser?.id],
+    queryFn: () => fetchFollowedBuildIds(authUser!.id),
+    enabled: !!authUser?.id,
+  })
+
   const { data: buildFollowers = [] } = useQuery({
     queryKey: ['build-followers', data?.build?.id],
-    queryFn: () => listBuildFollowers(data!.build.id),
+    queryFn: () => fetchBuildFollowers(data!.build.id),
     enabled: !!data?.build?.id,
   })
+
+  useEffect(() => {
+    if (data?.build?.id && followedIds) {
+      setIsFollowing(followedIds.has(data.build.id))
+    }
+  }, [data?.build?.id, followedIds])
 
   // Must be before any early returns — Rules of Hooks
   const allTaggedPartIds = useMemo(() => {
@@ -129,17 +146,20 @@ export default function BuildProfileScreen() {
   }
 
   const { user, build, parts, comments } = data
-  const isOwner = user.id === MOCK_USER_ID
+  const isOwner = build.userId === authUser?.id
+  const isPro = user.proTier === '1' || user.proTier === 1
 
   const allComments = [...comments, ...localComments]
 
-  async function handleSendComment() {
-    const text = commentText.trim()
-    if (!text) return
-    setCommentText('')
-    const newComment = await addComment(build.id, text, replyingTo?.commentId)
-    setLocalComments(prev => [...prev, newComment])
-    setReplyingTo(null)
+  async function handleFollowToggle() {
+    if (!authUser?.id) return
+    const prev = isFollowing
+    setIsFollowing(!prev)
+    try {
+      await toggleBuildFollow(authUser.id, build.id, prev)
+    } catch {
+      setIsFollowing(prev)
+    }
   }
 
   function handleReply(commentId: string, username: string) {
@@ -172,6 +192,8 @@ export default function BuildProfileScreen() {
     if (!byCategory[cat]) byCategory[cat] = []
     byCategory[cat].push(p)
   })
+
+  const buildMeta = [build.year || null, build.make, build.model].filter(Boolean).join(' ')
 
   const TABS: { key: BuildTab; label: string; count: number }[] = [
     { key: 'posts', label: 'Posts', count: posts.length },
@@ -206,26 +228,26 @@ export default function BuildProfileScreen() {
           <View style={styles.titleRow}>
             <View style={styles.titleLeft}>
               <Text style={styles.nickname}>
-                {effectiveNickname || `${build.year} ${build.make}`}
+                {effectiveNickname || buildMeta}
               </Text>
-              <Text style={styles.meta}>
-                {build.year} {build.make} {build.model}
-              </Text>
+              <Text style={styles.meta}>{buildMeta}</Text>
             </View>
-            <Pressable
-              style={[styles.followBtn, isFollowing && styles.followBtnActive]}
-              onPress={() => setIsFollowing(!isFollowing)}
-            >
-              <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
-                {isFollowing ? 'Following' : 'Follow'}
-              </Text>
-            </Pressable>
+            {!isOwner && (
+              <Pressable
+                style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+                onPress={handleFollowToggle}
+              >
+                <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           <Pressable style={styles.userRow} onPress={() => router.push(`/user/${user.username}`)}>
             <InitialsAvatar name={user.displayName} photoUrl={user.avatarUrl} size={26} />
             <Text style={styles.handle}>@{user.username}</Text>
-            {isProUser(user.username) && <ProBadge size={12} />}
+            {isPro && <ProBadge size={12} />}
           </Pressable>
 
           <Pressable style={styles.statsRow} onPress={() => setFollowersSheetOpen(true)}>
@@ -364,10 +386,7 @@ export default function BuildProfileScreen() {
                     />
                     <View style={styles.commentInfo}>
                       <View style={styles.commentHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={styles.commentUsername}>@{comment.username}</Text>
-                          {isProUser(comment.username) && <ProBadge size={12} />}
-                        </View>
+                        <Text style={styles.commentUsername}>@{comment.username}</Text>
                         <Text style={styles.commentTime}>{relativeTime(comment.createdAt)}</Text>
                       </View>
                       <Text style={styles.commentBody}>{comment.body}</Text>
@@ -385,10 +404,7 @@ export default function BuildProfileScreen() {
                       />
                       <View style={styles.commentInfo}>
                         <View style={styles.commentHeader}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Text style={styles.commentUsername}>@{reply.username}</Text>
-                            {isProUser(reply.username) && <ProBadge size={12} />}
-                          </View>
+                          <Text style={styles.commentUsername}>@{reply.username}</Text>
                           <Text style={styles.commentTime}>{relativeTime(reply.createdAt)}</Text>
                         </View>
                         <Text style={styles.commentBody}>{reply.body}</Text>
@@ -427,11 +443,9 @@ export default function BuildProfileScreen() {
               onChangeText={setCommentText}
               multiline={false}
               returnKeyType="send"
-              onSubmitEditing={handleSendComment}
             />
             <Pressable
               style={[styles.commentSendBtn, !commentText.trim() && styles.commentSendBtnDisabled]}
-              onPress={handleSendComment}
               disabled={!commentText.trim()}
             >
               <Send size={16} color="#fff" />
@@ -483,10 +497,7 @@ export default function BuildProfileScreen() {
                 <InitialsAvatar name={item.displayName ?? item.username} photoUrl={item.avatarUrl} size={40} />
                 <View style={styles.followerInfo}>
                   <Text style={styles.followerName}>{item.displayName}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={styles.followerHandle}>@{item.username}</Text>
-                    {isProUser(item.username) && <ProBadge size={11} />}
-                  </View>
+                  <Text style={styles.followerHandle}>@{item.username}</Text>
                 </View>
               </Pressable>
             )}

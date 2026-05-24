@@ -69,6 +69,7 @@ export interface Post {
   buildModel?: string
   buildCoverPhotoUrl?: string
   buildType?: string
+  isPro?: boolean
 }
 
 export interface Comment {

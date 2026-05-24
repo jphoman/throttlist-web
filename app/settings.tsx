@@ -30,6 +30,7 @@ import {
   getStorePosition, setStorePosition, getTopBuildsPosition, setTopBuildsPosition,
 } from '@/lib/data'
 import { colors, MOCK_USER_ID } from '@/constants/throttlist'
+import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
 
 type Section = 'main' | 'editProfile' | 'reorderProfile'
@@ -43,6 +44,7 @@ export default function SettingsScreen() {
   const [section, setSection] = useState<Section>('main')
   const [saving, setSaving] = useState(false)
   const queryClient = useQueryClient()
+  const { signOut } = useAuth()
 
   const { data: user } = useQuery({
     queryKey: ['profile', MOCK_USER_ID],
@@ -137,11 +139,18 @@ export default function SettingsScreen() {
     setSection('main')
   }
 
-  function handleLogOut() {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log out', style: 'destructive', onPress: () => router.replace('/onboarding') },
-    ])
+  async function handleLogOut() {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Are you sure you want to log out?')
+      : await new Promise<boolean>(resolve =>
+          Alert.alert('Log out', 'Are you sure you want to log out?', [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Log out', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        )
+    if (!confirmed) return
+    await signOut()
+    router.replace('/login')
   }
 
   function handleDeleteContent() {

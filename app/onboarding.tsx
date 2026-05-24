@@ -10,17 +10,8 @@ import {
 import { router } from 'expo-router'
 import { colors } from '@/constants/throttlist'
 import { ThrottlistLogo } from '@/components/ThrottlistLogo'
-
-const BUILD_TYPES = [
-  { id: 'cafe_racer', label: 'Café Racer', icon: '⚡' },
-  { id: 'scrambler', label: 'Scrambler', icon: '🏕️' },
-  { id: 'tracker', label: 'Tracker', icon: '🏁' },
-  { id: 'bobber', label: 'Bobber', icon: '🔩' },
-  { id: 'chopper', label: 'Chopper', icon: '🛠️' },
-  { id: 'adventure', label: 'Adventure', icon: '🏔️' },
-  { id: 'bagger', label: 'Bagger', icon: '🛣️' },
-  { id: 'other', label: 'Other', icon: '🏍️' },
-]
+import { BUILD_CATEGORIES } from '@/constants/buildTypes'
+import { CategoryIcon } from '@/components/Icons'
 
 export default function OnboardingScreen() {
   const [selected, setSelected] = useState<string | null>(null)
@@ -39,19 +30,23 @@ export default function OnboardingScreen() {
         <ThrottlistLogo color={colors.accent} height={30} />
       </View>
 
-      <Text style={styles.headline}>What do you build?</Text>
+      <Text style={styles.headline}>What's your build?</Text>
       <Text style={styles.sub}>
         We'll personalize your feed and discover page for your build style.
       </Text>
 
       <View style={styles.grid}>
-        {BUILD_TYPES.map(type => (
+        {BUILD_CATEGORIES.map(type => (
           <Pressable
             key={type.id}
             style={[styles.card, selected === type.id && styles.cardSelected]}
             onPress={() => setSelected(type.id)}
           >
-            <Text style={styles.cardIcon}>{type.icon}</Text>
+            <CategoryIcon
+              id={type.id}
+              size={28}
+              color={selected === type.id ? colors.accent : colors.textSecondary}
+            />
             <Text style={[styles.cardLabel, selected === type.id && styles.cardLabelSelected]}>
               {type.label}
             </Text>
@@ -120,9 +115,6 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: colors.accent,
     backgroundColor: colors.accent + '18',
-  },
-  cardIcon: {
-    fontSize: 30,
   },
   cardLabel: {
     color: colors.textSecondary,
