@@ -400,24 +400,25 @@ export default function SettingsScreen() {
 
         <Text style={styles.sectionLabel}>Profile</Text>
         <View style={styles.group}>
-          <View style={styles.row}>
-            <View style={styles.rowLeft}>
-              <Text style={styles.rowText}>Show Store</Text>
-              {!isPro && <ProBadge />}
-            </View>
-            <Switch
-              value={storeOn}
-              onValueChange={isPro ? toggleStore : () => router.push('/pro')}
-              trackColor={{ false: colors.surface3, true: colors.accent }}
-              thumbColor="#fff"
-            />
-          </View>
-          <View style={styles.separator} />
-          <Pressable style={styles.row} onPress={() => router.push('/store-items')}>
-            <Text style={styles.rowText}>Store Items</Text>
-            <ChevronRight size={16} color={colors.textTertiary} />
-          </Pressable>
-          <View style={styles.separator} />
+          {isPro && (
+            <>
+              <View style={styles.row}>
+                <Text style={styles.rowText}>Show Store</Text>
+                <Switch
+                  value={storeOn}
+                  onValueChange={toggleStore}
+                  trackColor={{ false: colors.surface3, true: colors.accent }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={styles.separator} />
+              <Pressable style={styles.row} onPress={() => router.push('/store-items')}>
+                <Text style={styles.rowText}>Store Items</Text>
+                <ChevronRight size={16} color={colors.textTertiary} />
+              </Pressable>
+              <View style={styles.separator} />
+            </>
+          )}
           <Pressable style={styles.row} onPress={openReorderProfile}>
             <Text style={styles.rowText}>Reorder Profile</Text>
             <ChevronRight size={16} color={colors.textTertiary} />
