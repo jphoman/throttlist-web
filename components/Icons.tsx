@@ -170,6 +170,18 @@ export function Copy({ size = 24, color = '#000' }: IconProps) {
   return <Feather name="copy" size={size} color={color} />
 }
 
+export function Clock({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="clock" size={size} color={color} />
+}
+export function Crop({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="crop" size={size} color={color} />
+}
+export function Grid({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="grid" size={size} color={color} />
+}
+export function Sliders({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="sliders" size={size} color={color} />
+}
 export function Zap({ size = 24, color = '#000' }: IconProps) {
   return <Ionicons name="flash" size={size} color={color} />
 }
