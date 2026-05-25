@@ -136,29 +136,33 @@ export default function PostDetailScreen() {
             </ScrollView>
 
             {/* Overlaid author row */}
-            <Pressable
-              style={styles.overlayAuthor}
-              onPress={() => {
-                if (post.username && post.buildSlug) {
-                  router.push(`/build/${post.username}/${post.buildSlug}`)
-                }
-              }}
-            >
-              <InitialsAvatar
-                name={post.buildNickname ?? post.buildMake ?? ''}
-                photoUrl={post.buildCoverPhotoUrl ?? null}
-                size={34}
-              />
+            <View style={styles.overlayAuthor}>
+              <Pressable onPress={() => post.username && router.push(`/user/${post.username}`)}>
+                <InitialsAvatar
+                  name={post.buildNickname ?? post.buildMake ?? ''}
+                  photoUrl={post.buildCoverPhotoUrl ?? null}
+                  size={34}
+                />
+              </Pressable>
               <View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Pressable
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  onPress={() => post.username && router.push(`/user/${post.username}`)}
+                >
                   <Text style={styles.overlayHandle}>@{post.username}</Text>
                   {post.isPro && <ProBadge size={12} />}
-                </View>
-                <Text style={styles.overlayBuild} numberOfLines={1}>
-                  {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
-                </Text>
+                </Pressable>
+                <Pressable onPress={() => {
+                  if (post.username && post.buildSlug) {
+                    router.push(`/build/${post.username}/${post.buildSlug}`)
+                  }
+                }}>
+                  <Text style={styles.overlayBuild} numberOfLines={1}>
+                    {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
+                  </Text>
+                </Pressable>
               </View>
-            </Pressable>
+            </View>
 
             {/* Dot indicators */}
             {photos.length > 1 && (
@@ -176,20 +180,18 @@ export default function PostDetailScreen() {
           </View>
         ) : (
           <View style={[styles.photoSkeleton, { backgroundColor: colors.surface2 }]}>
-            <Pressable
-              style={styles.overlayAuthor}
-              onPress={() => {
-                if (post.username && post.buildSlug) {
-                  router.push(`/build/${post.username}/${post.buildSlug}`)
-                }
-              }}
-            >
-              <InitialsAvatar name={post.buildNickname ?? ''} size={34} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={styles.overlayAuthor}>
+              <Pressable onPress={() => post.username && router.push(`/user/${post.username}`)}>
+                <InitialsAvatar name={post.buildNickname ?? ''} size={34} />
+              </Pressable>
+              <Pressable
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                onPress={() => post.username && router.push(`/user/${post.username}`)}
+              >
                 <Text style={styles.overlayHandle}>@{post.username}</Text>
                 {post.isPro && <ProBadge size={12} />}
-              </View>
-            </Pressable>
+              </Pressable>
+            </View>
           </View>
         )}
 
