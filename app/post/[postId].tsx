@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   backBtn: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.surface1,
     borderRadius: 20,
     padding: 8,
   },
