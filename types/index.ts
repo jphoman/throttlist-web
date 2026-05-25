@@ -49,6 +49,17 @@ export interface Part {
   createdAt: string
 }
 
+export interface LinkedProduct {
+  id: string
+  title: string
+  brand?: string
+  rawUrl: string
+  trackingUrl: string
+  x: number   // 0-1 relative position on image
+  y: number
+  source: 'amazon' | 'web'
+}
+
 export interface Post {
   id: string
   buildId: string
@@ -56,6 +67,7 @@ export interface Post {
   photos: string // JSON array string
   caption: string
   taggedPartIds: string // JSON array string
+  linkedProducts: string // JSON array of LinkedProduct
   likeCount: number
   commentCount: number
   createdAt: string

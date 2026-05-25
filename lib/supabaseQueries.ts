@@ -76,6 +76,7 @@ function mapPost(row: any): Post {
     photos: JSON.stringify(row.photos ?? []),
     caption: row.caption ?? '',
     taggedPartIds: JSON.stringify(row.tagged_part_ids ?? []),
+    linkedProducts: JSON.stringify(row.linked_products ?? []),
     likeCount: row.like_count ?? 0,
     commentCount: row.comment_count ?? 0,
     createdAt: row.created_at,
@@ -233,6 +234,7 @@ export async function createPost(post: {
   build_id?: string | null
   photos: string[]
   caption?: string | null
+  linked_products?: object[]
 }): Promise<Post | null> {
   const { data, error } = await supabase
     .from('posts')
