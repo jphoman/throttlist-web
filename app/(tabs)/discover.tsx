@@ -176,22 +176,23 @@ export default function DiscoverScreen() {
                     ) : (
                       <View style={[styles.buildPhoto, styles.fallback]} />
                     )}
-                    {pc > 0 ? (
-                      <View style={styles.buildTagBadge} pointerEvents="none">
-                        <Svg width={48} height={20} viewBox="0 0 48 20">
-                          <SvgPath
-                            d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
-                            fill={colors.accent}
-                            fillRule="evenodd"
-                          />
-                        </Svg>
-                        <Text style={styles.buildTagBadgeText}>{pc}</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.trendingBadge} pointerEvents="none">
+                    <View style={styles.buildBadges} pointerEvents="none">
+                      <View style={styles.trendingBadge}>
                         <TrendingUp size={11} color="#fff" />
                       </View>
-                    )}
+                      {pc > 0 && (
+                        <View style={styles.buildTagBadge}>
+                          <Svg width={48} height={20} viewBox="0 0 48 20">
+                            <SvgPath
+                              d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
+                              fill={colors.accent}
+                              fillRule="evenodd"
+                            />
+                          </Svg>
+                          <Text style={styles.buildTagBadgeText}>{pc}</Text>
+                        </View>
+                      )}
+                    </View>
                     <View style={styles.buildOverlay} pointerEvents="none">
                       <Text style={styles.buildLabel} numberOfLines={1}>
                         {build.nickname || build.model}
@@ -356,20 +357,23 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.surface2,
   },
-  trendingBadge: {
+  buildBadges: {
     position: 'absolute',
     top: 8,
     right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  trendingBadge: {
     backgroundColor: colors.accent,
     borderRadius: 12,
     padding: 4,
   },
   buildTagBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
     width: 48,
     height: 20,
+    position: 'relative',
   },
   buildTagBadgeText: {
     position: 'absolute',

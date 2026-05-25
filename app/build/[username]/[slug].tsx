@@ -188,8 +188,10 @@ export default function BuildProfileScreen() {
 
   const tags = effectiveTags
 
-  const paintParts = parts.filter(p => p.category?.toLowerCase() === 'paint')
-  const otherParts = parts.filter(p => p.category?.toLowerCase() !== 'paint')
+  // Only show parts that are actually tagged in at least one post
+  const taggedCatalogParts = parts.filter(p => allTaggedPartIds.includes(p.id))
+  const paintParts = taggedCatalogParts.filter(p => p.category?.toLowerCase() === 'paint')
+  const otherParts = taggedCatalogParts.filter(p => p.category?.toLowerCase() !== 'paint')
   const byCategory: Record<string, Part[]> = {}
   otherParts.forEach(p => {
     const cat = p.category || 'Other'
@@ -201,7 +203,7 @@ export default function BuildProfileScreen() {
 
   const TABS: { key: BuildTab; label: string; count: number }[] = [
     { key: 'posts', label: 'Posts', count: posts.length },
-    { key: 'tags', label: 'Tags', count: parts.length },
+    { key: 'tags', label: 'Tags', count: allTaggedPartIds.length },
     { key: 'comments', label: 'Comments', count: allComments.length },
   ]
 
@@ -344,7 +346,7 @@ export default function BuildProfileScreen() {
           )}
 
           {activeTab === 'tags' && (
-            parts.length === 0 ? (
+            taggedCatalogParts.length === 0 ? (
               <Text style={styles.emptyText}>No mods logged yet</Text>
             ) : (
               <>
