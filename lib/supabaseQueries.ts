@@ -64,6 +64,7 @@ function mapBuild(row: any): Build {
     displayName: row.profiles?.display_name,
     avatarUrl: row.profiles?.avatar_url ?? '',
     ownerIsPro: row.profiles?.is_pro ?? false,
+    partCount: row.parts?.[0]?.count ?? 0,
   }
 }
 
@@ -395,7 +396,7 @@ export async function toggleBuildFollow(userId: string, buildId: string, current
 export async function fetchAllBuilds(limit = 20): Promise<Build[]> {
   const { data, error } = await supabase
     .from('builds')
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles(username, display_name, avatar_url, is_pro), parts(count)')
     .eq('status', 'active')
     .order('follower_count', { ascending: false })
     .limit(limit)

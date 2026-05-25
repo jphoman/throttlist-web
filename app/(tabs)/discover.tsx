@@ -10,6 +10,7 @@ import {
   Image,
   Dimensions,
 } from 'react-native'
+import Svg, { Path as SvgPath } from 'react-native-svg'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Search, MessageCircle, Heart, TrendingUp } from '@/components/Icons'
@@ -158,31 +159,47 @@ export default function DiscoverScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.buildsRow}
             >
-              {filteredBuilds.map(build => (
-                <Pressable
-                  key={build.id}
-                  style={styles.buildItem}
-                  onPress={() => {
-                    if (build.username && build.slug) {
-                      router.push(`/build/${build.username}/${build.slug}`)
-                    }
-                  }}
-                >
-                  {build.coverPhotoUrl ? (
-                    <Image source={{ uri: build.coverPhotoUrl }} style={styles.buildPhoto} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.buildPhoto, styles.fallback]} />
-                  )}
-                  <View style={styles.trendingBadge} pointerEvents="none">
-                    <TrendingUp size={11} color="#fff" />
-                  </View>
-                  <View style={styles.buildOverlay} pointerEvents="none">
-                    <Text style={styles.buildLabel} numberOfLines={1}>
-                      {build.nickname || build.model}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
+              {filteredBuilds.map(build => {
+                const pc = build.partCount ?? 0
+                return (
+                  <Pressable
+                    key={build.id}
+                    style={styles.buildItem}
+                    onPress={() => {
+                      if (build.username && build.slug) {
+                        router.push(`/build/${build.username}/${build.slug}`)
+                      }
+                    }}
+                  >
+                    {build.coverPhotoUrl ? (
+                      <Image source={{ uri: build.coverPhotoUrl }} style={styles.buildPhoto} resizeMode="cover" />
+                    ) : (
+                      <View style={[styles.buildPhoto, styles.fallback]} />
+                    )}
+                    {pc > 0 ? (
+                      <View style={styles.buildTagBadge} pointerEvents="none">
+                        <Svg width={48} height={20} viewBox="0 0 48 20">
+                          <SvgPath
+                            d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
+                            fill={colors.accent}
+                            fillRule="evenodd"
+                          />
+                        </Svg>
+                        <Text style={styles.buildTagBadgeText}>{pc}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.trendingBadge} pointerEvents="none">
+                        <TrendingUp size={11} color="#fff" />
+                      </View>
+                    )}
+                    <View style={styles.buildOverlay} pointerEvents="none">
+                      <Text style={styles.buildLabel} numberOfLines={1}>
+                        {build.nickname || build.model}
+                      </Text>
+                    </View>
+                  </Pressable>
+                )
+              })}
             </ScrollView>
           )}
 
@@ -219,20 +236,29 @@ export default function DiscoverScreen() {
           {filteredPosts.map(post => {
             const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
             const thumb = photos[0]
+            const tagCount: number = (() => { try { return (JSON.parse(post.taggedPartIds) as string[]).length } catch { return 0 } })()
             return (
               <Pressable
                 key={post.id}
                 style={styles.gridItem}
-                onPress={() => {
-                  if (post.username && post.buildSlug) {
-                    router.push(`/build/${post.username}/${post.buildSlug}`)
-                  }
-                }}
+                onPress={() => router.push(`/post/${post.id}`)}
               >
                 {thumb ? (
                   <Image source={{ uri: thumb }} style={styles.gridPhoto} resizeMode="cover" />
                 ) : (
                   <View style={[styles.gridPhoto, styles.fallback]} />
+                )}
+                {tagCount > 0 && (
+                  <View style={styles.gridTagBadge} pointerEvents="none">
+                    <Svg width={38} height={16} viewBox="0 0 48 20">
+                      <SvgPath
+                        d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
+                        fill={colors.accent}
+                        fillRule="evenodd"
+                      />
+                    </Svg>
+                    <Text style={styles.gridTagBadgeText}>{tagCount}</Text>
+                  </View>
                 )}
                 <View style={styles.gridOverlay} pointerEvents="none">
                   <View style={styles.gridStat}>
@@ -337,6 +363,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderRadius: 12,
     padding: 4,
+  },
+  buildTagBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 48,
+    height: 20,
+  },
+  buildTagBadgeText: {
+    position: 'absolute',
+    left: 17,
+    right: 2,
+    top: 0,
+    bottom: 0,
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  gridTagBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 38,
+    height: 16,
+  },
+  gridTagBadgeText: {
+    position: 'absolute',
+    left: 13,
+    right: 1,
+    top: 0,
+    bottom: 0,
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 16,
   },
   buildOverlay: {
     position: 'absolute',
