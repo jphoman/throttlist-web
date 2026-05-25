@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Bell, Compass, ChevronDown, X as XIcon } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFeed as fetchFeedFromSupabase, fetchFollowedFeed, fetchFollowedBuilds } from '@/lib/supabaseQueries'
+import { fetchFeed as fetchFeedFromSupabase, fetchFollowedFeed, fetchFollowedBuilds, fetchLikedPostIds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
@@ -67,6 +67,13 @@ export default function FeedScreen() {
     queryKey: ['followed-builds-list', userId],
     queryFn: () => fetchFollowedBuilds(userId),
     enabled: !!userId,
+  })
+
+  const { data: likedPostIds } = useQuery({
+    queryKey: ['liked-posts', userId],
+    queryFn: () => fetchLikedPostIds(userId),
+    enabled: !!userId,
+    staleTime: 60_000,
   })
 
   const onRefresh = useCallback(async () => {
@@ -344,6 +351,7 @@ export default function FeedScreen() {
             <PostCard
               post={item}
               parts={[]}
+              initialLiked={likedPostIds?.has(item.id) ?? false}
               onBuildPress={() => {
                 if (item.username && item.buildSlug) {
                   router.push(`/build/${item.username}/${item.buildSlug}`)

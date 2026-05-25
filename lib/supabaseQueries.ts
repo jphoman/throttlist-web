@@ -442,9 +442,162 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
   }))
 }
 
-export async function addComment(userId: string, postId: string, body: string): Promise<void> {
-  await supabase.from('comments').insert({ user_id: userId, post_id: postId, body })
+export async function addComment(userId: string, postId: string, body: string, parentId?: string): Promise<Comment> {
+  const { data, error } = await supabase
+    .from('comments')
+    .insert({ user_id: userId, post_id: postId, body, parent_id: parentId ?? null })
+    .select('*, profiles(username, display_name, avatar_url)')
+    .single()
+  if (error || !data) throw error
   await supabase.from('posts').update({ comment_count: supabase.rpc('increment', { x: 1 }) }).eq('id', postId)
+  return {
+    id: data.id,
+    body: data.body,
+    authorUserId: data.user_id,
+    parentId: data.parent_id ?? undefined,
+    likes: 0,
+    targetType: 'post',
+    targetId: data.post_id,
+    isPinned: '0',
+    createdAt: data.created_at,
+    username: data.profiles?.username,
+    displayName: data.profiles?.display_name,
+    avatarUrl: data.profiles?.avatar_url ?? '',
+  }
+}
+
+export async function deleteComment(commentId: string, postId: string): Promise<void> {
+  await supabase.from('comments').delete().eq('id', commentId)
+  await supabase.from('posts').update({ comment_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', postId)
+}
+
+// ─── Post mutations ───────────────────────────────────────────────────────────
+
+export async function updatePost(postId: string, updates: {
+  caption?: string
+  taggedPartIds?: string[]
+  isPinned?: boolean
+}): Promise<void> {
+  const patch: Record<string, unknown> = {}
+  if (updates.caption !== undefined) patch.caption = updates.caption
+  if (updates.taggedPartIds !== undefined) patch.tagged_part_ids = updates.taggedPartIds
+  if (updates.isPinned !== undefined) patch.is_pinned = updates.isPinned
+  await supabase.from('posts').update(patch).eq('id', postId)
+}
+
+export async function deletePost(postId: string): Promise<void> {
+  await supabase.from('posts').delete().eq('id', postId)
+}
+
+// ─── Notifications (derived from existing tables) ─────────────────────────────
+
+export type Notification = {
+  id: string
+  type: 'like' | 'comment' | 'follow'
+  actorUsername: string
+  actorDisplayName: string
+  actorAvatarUrl: string
+  content: string
+  postId?: string
+  buildId?: string
+  createdAt: string
+  read: boolean
+}
+
+export async function fetchNotifications(userId: string): Promise<Notification[]> {
+  // Fetch user's post IDs first
+  const { data: myPosts } = await supabase
+    .from('posts')
+    .select('id, build_id, builds(nickname, slug, profiles(username))')
+    .eq('user_id', userId)
+    .limit(50)
+
+  const postIds = (myPosts ?? []).map((p: any) => p.id)
+  const notifications: Notification[] = []
+
+  // Likes on user's posts
+  if (postIds.length > 0) {
+    const { data: likes } = await supabase
+      .from('likes')
+      .select('post_id, user_id, created_at, profiles!likes_user_id_fkey(username, display_name, avatar_url)')
+      .in('post_id', postIds)
+      .neq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    for (const like of likes ?? []) {
+      const post = (myPosts ?? []).find((p: any) => p.id === like.post_id)
+      notifications.push({
+        id: `like_${like.post_id}_${like.user_id}`,
+        type: 'like',
+        actorUsername: like.profiles?.username ?? '',
+        actorDisplayName: like.profiles?.display_name ?? '',
+        actorAvatarUrl: like.profiles?.avatar_url ?? '',
+        content: `liked your post`,
+        postId: like.post_id,
+        createdAt: like.created_at,
+        read: false,
+      })
+    }
+
+    // Comments on user's posts
+    const { data: comments } = await supabase
+      .from('comments')
+      .select('id, post_id, body, user_id, created_at, profiles(username, display_name, avatar_url)')
+      .in('post_id', postIds)
+      .neq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    for (const c of comments ?? []) {
+      notifications.push({
+        id: `comment_${c.id}`,
+        type: 'comment',
+        actorUsername: c.profiles?.username ?? '',
+        actorDisplayName: c.profiles?.display_name ?? '',
+        actorAvatarUrl: c.profiles?.avatar_url ?? '',
+        content: `commented: "${c.body.slice(0, 60)}${c.body.length > 60 ? '…' : ''}"`,
+        postId: c.post_id,
+        createdAt: c.created_at,
+        read: false,
+      })
+    }
+  }
+
+  // Follows on user's builds
+  const { data: myBuilds } = await supabase
+    .from('builds')
+    .select('id, nickname, slug')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+
+  const buildIds = (myBuilds ?? []).map((b: any) => b.id)
+  if (buildIds.length > 0) {
+    const { data: follows } = await supabase
+      .from('build_follows')
+      .select('build_id, follower_id, created_at, profiles!build_follows_follower_id_fkey(username, display_name, avatar_url)')
+      .in('build_id', buildIds)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    for (const f of follows ?? []) {
+      const build = (myBuilds ?? []).find((b: any) => b.id === f.build_id)
+      notifications.push({
+        id: `follow_${f.build_id}_${f.follower_id}`,
+        type: 'follow',
+        actorUsername: f.profiles?.username ?? '',
+        actorDisplayName: f.profiles?.display_name ?? '',
+        actorAvatarUrl: f.profiles?.avatar_url ?? '',
+        content: `started following ${build?.nickname ?? 'your build'}`,
+        buildId: f.build_id,
+        createdAt: f.created_at,
+        read: false,
+      })
+    }
+  }
+
+  // Sort all by date desc
+  return notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 50)
 }
 
 // ─── Search ───────────────────────────────────────────────────────────────────

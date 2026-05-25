@@ -24,12 +24,8 @@ import {
   Youtube,
   ProBadge,
 } from '@/components/Icons'
-import {
-  getUser, listBuilds, getUserBuildOrder,
-  setUserBuildOrder, isStoreVisible, setStoreVisible,
-  getStorePosition, setStorePosition, getTopBuildsPosition, setTopBuildsPosition,
-} from '@/lib/data'
-import { colors, MOCK_USER_ID } from '@/constants/throttlist'
+import { fetchProfile, fetchUserBuilds, updateProfile } from '@/lib/supabaseQueries'
+import { colors } from '@/constants/throttlist'
 import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
 
@@ -44,11 +40,13 @@ export default function SettingsScreen() {
   const [section, setSection] = useState<Section>('main')
   const [saving, setSaving] = useState(false)
   const queryClient = useQueryClient()
-  const { signOut } = useAuth()
+  const { user: authUser, signOut } = useAuth()
+  const userId = authUser?.id ?? ''
 
   const { data: user } = useQuery({
-    queryKey: ['profile', MOCK_USER_ID],
-    queryFn: () => getUser(MOCK_USER_ID),
+    queryKey: ['profile', userId],
+    queryFn: () => fetchProfile(userId),
+    enabled: !!userId,
   })
 
   const [displayName, setDisplayName] = useState('')
@@ -60,39 +58,18 @@ export default function SettingsScreen() {
 
   const isPro = parseInt((user?.proTier ?? '0') as string) >= 1
 
-  const [storeOn, setStoreOnState] = useState(() => isStoreVisible(MOCK_USER_ID))
+  const [storeOn, setStoreOnState] = useState(false)
   function toggleStore(v: boolean) {
     setStoreOnState(v)
-    setStoreVisible(MOCK_USER_ID, v)
   }
 
   const [profileOrder, setProfileOrder] = useState<OrderItem[]>([])
 
   async function openReorderProfile() {
-    const builds = await listBuilds({ userId: MOCK_USER_ID })
-    const order = getUserBuildOrder(MOCK_USER_ID)
-    const map = Object.fromEntries(builds.map(b => [b.id, b]))
-    const buildItems: Extract<OrderItem, { type: 'build' }>[] = order
-      .map(id => map[id])
-      .filter(Boolean)
+    const builds = await fetchUserBuilds(userId)
+    const buildItems: Extract<OrderItem, { type: 'build' }>[] = builds
       .map(b => ({ type: 'build' as const, id: b.id, nickname: b.nickname, year: b.year, make: b.make, model: b.model }))
-
-    const storePos = Math.min(getStorePosition(MOCK_USER_ID), buildItems.length)
-    const topBuildsPos = Math.min(getTopBuildsPosition(MOCK_USER_ID), buildItems.length)
-
-    const insertions = [
-      { pos: storePos, item: { type: 'store' as const } },
-      { pos: topBuildsPos, item: { type: 'topBuilds' as const } },
-    ].sort((a, b) => a.pos - b.pos || (a.item.type === 'store' ? -1 : 1))
-
-    let merged: OrderItem[] = [...buildItems]
-    let offset = 0
-    for (const { pos, item } of insertions) {
-      merged = [...merged.slice(0, pos + offset), item, ...merged.slice(pos + offset)]
-      offset++
-    }
-
-    setProfileOrder(merged)
+    setProfileOrder(buildItems)
     setSection('reorderProfile')
   }
 
@@ -105,18 +82,6 @@ export default function SettingsScreen() {
   }
 
   function saveReorderProfile() {
-    const buildIds = profileOrder.filter(i => i.type === 'build').map(i => (i as any).id)
-    const storeIdx = profileOrder.findIndex(i => i.type === 'store')
-    const topBuildsIdx = profileOrder.findIndex(i => i.type === 'topBuilds')
-    const buildsBeforeStore = storeIdx === -1
-      ? Number.MAX_SAFE_INTEGER
-      : profileOrder.slice(0, storeIdx).filter(i => i.type === 'build').length
-    const buildsBeforeTopBuilds = topBuildsIdx === -1
-      ? Number.MAX_SAFE_INTEGER
-      : profileOrder.slice(0, topBuildsIdx).filter(i => i.type === 'build').length
-    setUserBuildOrder(MOCK_USER_ID, buildIds)
-    setStorePosition(MOCK_USER_ID, buildsBeforeStore)
-    setTopBuildsPosition(MOCK_USER_ID, buildsBeforeTopBuilds)
     queryClient.invalidateQueries({ queryKey: ['profile'] })
     queryClient.invalidateQueries({ queryKey: ['user-profile'] })
     setSection('main')
@@ -133,10 +98,22 @@ export default function SettingsScreen() {
   }
 
   async function handleSave() {
+    if (!userId) return
     setSaving(true)
-    await new Promise(r => setTimeout(r, 600))
-    setSaving(false)
-    setSection('main')
+    try {
+      await updateProfile(userId, {
+        display_name: displayName,
+        bio,
+        location,
+        instagram_handle: instagram,
+        youtube_handle: youtube,
+      })
+      queryClient.invalidateQueries({ queryKey: ['profile', userId] })
+      queryClient.invalidateQueries({ queryKey: ['user-profile'] })
+    } finally {
+      setSaving(false)
+      setSection('main')
+    }
   }
 
   async function handleLogOut() {

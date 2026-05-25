@@ -13,7 +13,7 @@ import {
   TextInput,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   Users,
@@ -36,6 +36,9 @@ import {
   fetchBuildFollowers,
   fetchFollowedBuildIds,
   toggleBuildFollow,
+  addComment,
+  updatePost,
+  deletePost,
 } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
@@ -73,6 +76,7 @@ async function fetchBuildProfile(username: string, slug: string) {
 export default function BuildProfileScreen() {
   const { username, slug } = useLocalSearchParams<{ username: string; slug: string }>()
   const { user: authUser } = useAuth()
+  const queryClient = useQueryClient()
   const [isFollowing, setIsFollowing] = useState(false)
   const [activeTab, setActiveTab] = useState<BuildTab>('posts')
   const [buildEditOpen, setBuildEditOpen] = useState(false)
@@ -446,7 +450,21 @@ export default function BuildProfileScreen() {
             />
             <Pressable
               style={[styles.commentSendBtn, !commentText.trim() && styles.commentSendBtnDisabled]}
-              disabled={!commentText.trim()}
+              disabled={!commentText.trim() || !authUser}
+              onPress={async () => {
+                const body = commentText.trim()
+                if (!body || !authUser || !data?.build?.id) return
+                setCommentText('')
+                setReplyingTo(null)
+                try {
+                  // posts on a build page are per-post; use first visible post or a build-level comment
+                  // For now add to the build's most-recent post as a thread
+                  const targetPostId = data.posts[0]?.id
+                  if (!targetPostId) return
+                  const newComment = await addComment(authUser.id, targetPostId, body)
+                  setLocalComments(prev => [...prev, newComment])
+                } catch { /* silently fail */ }
+              }}
             >
               <Send size={16} color="#fff" />
             </Pressable>
@@ -515,7 +533,7 @@ export default function BuildProfileScreen() {
           suggestedPartIds={allTaggedPartIds}
           isPinned={pinnedPostId === editingPost.id}
           onClose={() => setEditingPost(null)}
-          onSave={(updates) => {
+          onSave={async (updates) => {
             setLocalPostEdits(prev => ({
               ...prev,
               [editingPost.id]: {
@@ -525,11 +543,23 @@ export default function BuildProfileScreen() {
               },
             }))
             setEditingPost(null)
+            await updatePost(editingPost.id, {
+              caption: updates.caption,
+              taggedPartIds: updates.taggedPartIds,
+            })
+            queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
           }}
-          onTogglePin={() =>
-            setPinnedPostId(prev => prev === editingPost.id ? null : editingPost.id)
-          }
-          onDelete={() => setDeletedPostIds(prev => [...prev, editingPost.id])}
+          onTogglePin={async () => {
+            const next = pinnedPostId !== editingPost.id
+            setPinnedPostId(next ? editingPost.id : null)
+            await updatePost(editingPost.id, { isPinned: next })
+          }}
+          onDelete={async () => {
+            setDeletedPostIds(prev => [...prev, editingPost.id])
+            setEditingPost(null)
+            await deletePost(editingPost.id)
+            queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
+          }}
         />
       )}
     </View>

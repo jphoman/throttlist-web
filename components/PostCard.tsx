@@ -16,7 +16,8 @@ import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import { router } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import CommentSheet from '@/components/CommentSheet'
-import { fetchBuildParts } from '@/lib/supabaseQueries'
+import { fetchBuildParts, toggleLike } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
 import type { Post, Part } from '@/types'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -25,6 +26,7 @@ const PHOTO_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3))
 interface PostCardProps {
   post: Post
   parts?: Part[]
+  initialLiked?: boolean
   onPartPress?: (part: Part) => void
   onBuildPress?: () => void
   onLike?: () => void
@@ -36,6 +38,7 @@ interface PostCardProps {
 export default function PostCard({
   post,
   parts = [],
+  initialLiked = false,
   onPartPress,
   onBuildPress,
   onLike,
@@ -43,7 +46,8 @@ export default function PostCard({
   onShare,
   onShopPress,
 }: PostCardProps) {
-  const [liked, setLiked] = useState(false)
+  const { user: authUser } = useAuth()
+  const [liked, setLiked] = useState(initialLiked)
   const [photoIndex, setPhotoIndex] = useState(0)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [commentSheetOpen, setCommentSheetOpen] = useState(false)
@@ -79,8 +83,11 @@ export default function PostCard({
 
 
   function handleLike() {
-    setLiked(!liked)
+    if (!authUser) return
+    const next = !liked
+    setLiked(next)
     onLike?.()
+    toggleLike(authUser.id, post.id, liked).catch(() => setLiked(liked)) // rollback on error
   }
 
   function openComments() {

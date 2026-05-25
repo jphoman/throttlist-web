@@ -3,72 +3,87 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
-  Platform,
   TextInput,
+  ScrollView,
+  Platform,
   Dimensions,
 } from 'react-native'
 import { router } from 'expo-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Search, X } from '@/components/Icons'
-import { listFollowingBuilds, listBuilds, listUsers } from '@/lib/data'
-import { colors, MOCK_USER_ID } from '@/constants/throttlist'
+import { fetchFollowedBuilds, fetchAllBuilds, toggleBuildFollow, fetchFollowedBuildIds } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors } from '@/constants/throttlist'
 import BuildTile from '@/components/BuildTile'
 import type { Build } from '@/types'
 
 const SCREEN_W = Dimensions.get('window').width
 const TILE_SIZE = Math.floor(SCREEN_W / 3)
 
-async function fetchFollowingData() {
-  const [followed, allBuilds, allUsers] = await Promise.all([
-    listFollowingBuilds(MOCK_USER_ID),
-    listBuilds({ status: 'active' }),
-    listUsers(),
-  ])
-  const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]))
-  const allWithUser = allBuilds.map(b => ({
-    ...b,
-    username: userMap[b.userId]?.username,
-    displayName: userMap[b.userId]?.displayName,
-    avatarUrl: userMap[b.userId]?.avatarUrl,
-    ownerIsPro: parseInt(userMap[b.userId]?.proTier as string) >= 1,
-  }))
-  return { followed, allWithUser }
-}
-
 export default function FollowingScreen() {
+  const { user: authUser } = useAuth()
+  const userId = authUser?.id ?? ''
+  const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
-  const [localFollowed, setLocalFollowed] = useState<Set<string> | null>(null)
+  const [localFollowedIds, setLocalFollowedIds] = useState<Set<string> | null>(null)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['following-screen', MOCK_USER_ID],
-    queryFn: fetchFollowingData,
+  const { data: followedBuilds = [], isLoading: loadingFollowed } = useQuery({
+    queryKey: ['followed-builds', userId],
+    queryFn: () => fetchFollowedBuilds(userId),
+    enabled: !!userId,
   })
 
-  const followedBuilds = data?.followed ?? []
-  const allBuilds = data?.allWithUser ?? []
+  const { data: allBuilds = [], isLoading: loadingAll } = useQuery({
+    queryKey: ['all-builds-discover'],
+    queryFn: () => fetchAllBuilds(50),
+    enabled: !!query.trim(),
+  })
+
+  const { data: followedIdSet } = useQuery({
+    queryKey: ['followed-build-ids', userId],
+    queryFn: () => fetchFollowedBuildIds(userId),
+    enabled: !!userId,
+  })
+
+  const isLoading = loadingFollowed
 
   const followedIds: Set<string> = useMemo(() => {
-    if (localFollowed !== null) return localFollowed
-    return new Set(followedBuilds.map(b => b.id))
-  }, [localFollowed, followedBuilds])
+    if (localFollowedIds !== null) return localFollowedIds
+    return followedIdSet ?? new Set(followedBuilds.map(b => b.id))
+  }, [localFollowedIds, followedBuilds, followedIdSet])
 
-  function toggleFollow(buildId: string) {
-    setLocalFollowed(prev => {
-      const base = prev ?? new Set(followedBuilds.map(b => b.id))
+  async function handleToggleFollow(buildId: string) {
+    const currently = followedIds.has(buildId)
+    // Optimistic
+    setLocalFollowedIds(prev => {
+      const base = prev ?? new Set(followedIds)
       const next = new Set(base)
       if (next.has(buildId)) next.delete(buildId)
       else next.add(buildId)
       return next
     })
+    try {
+      await toggleBuildFollow(userId, buildId, currently)
+      queryClient.invalidateQueries({ queryKey: ['followed-builds', userId] })
+      queryClient.invalidateQueries({ queryKey: ['followed-build-ids', userId] })
+    } catch {
+      // rollback
+      setLocalFollowedIds(prev => {
+        const base = prev ?? new Set(followedIds)
+        const next = new Set(base)
+        if (currently) next.add(buildId)
+        else next.delete(buildId)
+        return next
+      })
+    }
   }
 
   const q = query.trim().toLowerCase()
 
   const currentFollowed: Build[] = useMemo(
-    () => allBuilds.filter(b => followedIds.has(b.id)),
-    [allBuilds, followedIds],
+    () => followedBuilds.filter(b => followedIds.has(b.id)),
+    [followedBuilds, followedIds],
   )
 
   const filteredFollowed: Build[] = useMemo(() => {
@@ -83,7 +98,7 @@ export default function FollowingScreen() {
 
   const discoverBuilds: Build[] = useMemo(() => {
     if (!q) return []
-    const unfollowed = allBuilds.filter(b => !followedIds.has(b.id) && b.userId !== MOCK_USER_ID)
+    const unfollowed = allBuilds.filter(b => !followedIds.has(b.id) && b.userId !== userId)
     const matched = unfollowed.filter(
       b =>
         b.nickname?.toLowerCase().includes(q) ||
@@ -91,7 +106,7 @@ export default function FollowingScreen() {
         b.model?.toLowerCase().includes(q),
     )
     return matched.sort((a, b) => b.followerCount - a.followerCount).slice(0, 10)
-  }, [allBuilds, followedIds, q])
+  }, [allBuilds, followedIds, q, userId])
 
   const showDiscover = discoverBuilds.length > 0
   const showFollowed = filteredFollowed.length > 0
@@ -147,7 +162,6 @@ export default function FollowingScreen() {
             )}
           </View>
         ) : !q ? (
-          /* Browse mode — 3-column grid */
           <View style={styles.grid}>
             {currentFollowed.map(build => (
               <BuildTile
@@ -159,7 +173,6 @@ export default function FollowingScreen() {
             ))}
           </View>
         ) : (
-          /* Search mode — horizontal scroll sections */
           <View style={styles.sections}>
             {showFollowed && (
               <View style={styles.section}>
@@ -197,7 +210,7 @@ export default function FollowingScreen() {
                       build={build}
                       size={120}
                       isFollowing={followedIds.has(build.id)}
-                      onFollow={() => toggleFollow(build.id)}
+                      onFollow={() => handleToggleFollow(build.id)}
                       onPress={() => router.push(`/build/${build.username ?? ''}/${build.slug}`)}
                     />
                   ))}
@@ -213,10 +226,7 @@ export default function FollowingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -227,11 +237,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  headerTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   backBtn: { padding: 4, width: 44 },
   searchWrap: {
     paddingHorizontal: 16,
@@ -250,23 +256,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surface2,
   },
-  searchInput: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 14,
-    padding: 0,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  sections: {
-    padding: 16,
-  },
+  searchInput: { flex: 1, color: colors.textPrimary, fontSize: 14, padding: 0 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  sections: { padding: 16 },
   section: {},
-  sectionGap: {
-    marginTop: 24,
-  },
+  sectionGap: { marginTop: 24 },
   sectionLabel: {
     color: colors.textSecondary,
     fontSize: 11,
@@ -275,23 +269,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 10,
   },
-  tileRow: {
-    gap: 0,
-    flexDirection: 'row',
-  },
-  empty: {
-    padding: 48,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyText: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    textAlign: 'center',
-  },
-  emptySubText: {
-    color: colors.textTertiary,
-    fontSize: 13,
-    textAlign: 'center',
-  },
+  tileRow: { gap: 0, flexDirection: 'row' },
+  empty: { padding: 48, alignItems: 'center', gap: 8 },
+  emptyText: { color: colors.textSecondary, fontSize: 15, textAlign: 'center' },
+  emptySubText: { color: colors.textTertiary, fontSize: 13, textAlign: 'center' },
 })

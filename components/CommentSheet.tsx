@@ -11,10 +11,11 @@ import {
   Platform,
   Image,
 } from 'react-native'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Heart, Send, ProBadge } from '@/components/Icons'
-import { listComments, isProUser } from '@/lib/data'
-import { colors, timeAgo, MOCK_USER_ID } from '@/constants/throttlist'
+import { fetchComments, addComment, deleteComment } from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors, timeAgo } from '@/constants/throttlist'
 import { router } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import type { Comment } from '@/types'
@@ -40,10 +41,8 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
 
   return (
     <View style={[styles.commentRow, isReply && styles.commentRowReply]}>
-      {/* Indent line for replies */}
       {isReply && <View style={styles.replyLine} />}
 
-      {/* Avatar */}
       <View style={styles.avatarCol}>
         {comment.avatarUrl ? (
           <Image source={{ uri: comment.avatarUrl }} style={[styles.avatar, isReply && styles.avatarSmall]} />
@@ -55,7 +54,6 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
         ) : null}
       </View>
 
-      {/* Body — long-press zone for delete/report */}
       <Pressable
         style={styles.commentBody}
         onLongPress={() => setActionsOpen(v => !v)}
@@ -69,7 +67,6 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
             >
               @{comment.username}
             </Text>
-            {isProUser(comment.username) && <ProBadge size={12} />}
           </View>
           <Text style={styles.commentTime}>{timeAgo(comment.createdAt)}</Text>
         </View>
@@ -77,7 +74,6 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
           {comment.body}
         </Text>
 
-        {/* Reply link + action menu */}
         <View style={styles.commentMeta}>
           {actionsOpen ? (
             <View style={styles.actionRow}>
@@ -108,7 +104,6 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
         </View>
       </Pressable>
 
-      {/* Like */}
       <Pressable style={styles.likeCol} onPress={() => setLiked(v => !v)}>
         <Heart
           size={isReply ? 14 : 16}
@@ -124,19 +119,26 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
 }
 
 export default function CommentSheet({ visible, postId, onClose }: CommentSheetProps) {
+  const { user: authUser } = useAuth()
+  const queryClient = useQueryClient()
   const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
   const [localComments, setLocalComments] = useState<Comment[]>([])
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
   const inputRef = useRef<TextInput>(null)
 
   const { data: fetched = [] } = useQuery({
     queryKey: ['comments', postId],
-    queryFn: () => listComments({ targetId: postId }),
-    enabled: visible,
+    queryFn: () => fetchComments(postId),
+    enabled: visible && !!postId,
   })
 
-  // Merge fetched + local, pin top-level first
-  const allComments = [...localComments, ...fetched]
+  // Merge: fetched (minus deleted) + local optimistic
+  const allComments = [
+    ...fetched.filter(c => !deletedIds.has(c.id)),
+    ...localComments.filter(c => !deletedIds.has(c.id)),
+  ]
   const topLevel = allComments
     .filter(c => !c.parentId)
     .sort((a, b) => {
@@ -151,7 +153,6 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     repliesById[key].push(c)
   })
 
-  // Flatten into render list: parent, ...its replies, parent, ...
   type ListItem = { comment: Comment; isReply: boolean }
   const listItems: ListItem[] = []
   topLevel.forEach(parent => {
@@ -166,40 +167,56 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     setTimeout(() => inputRef.current?.focus(), 50)
   }
 
-  function handleSend() {
+  async function handleSend() {
     const body = draft.trim()
-    if (!body) return
+    if (!body || !authUser) return
+    setSending(true)
 
-    // Replies always attach to the root parent (flatten threading)
     const parentId = replyingTo
       ? (replyingTo.parentId ?? replyingTo.id)
       : undefined
 
-    const newComment: Comment = {
-      id: `local_${Date.now()}`,
-      body,
-      authorUserId: MOCK_USER_ID,
-      parentId,
-      targetType: 'post',
-      targetId: postId,
-      likes: 0,
-      isPinned: '0',
-      createdAt: new Date().toISOString(),
-      username: 'cappuccinomoto',
-      displayName: 'Cappuccino Moto',
-      avatarUrl: '/cappuccino-logo.jpg',
+    try {
+      const newComment = await addComment(authUser.id, postId, body, parentId)
+      setLocalComments(prev => [...prev, newComment])
+      queryClient.invalidateQueries({ queryKey: ['comments', postId] })
+    } catch (e) {
+      // fallback: optimistic only
+      const fallback: Comment = {
+        id: `local_${Date.now()}`,
+        body,
+        authorUserId: authUser.id,
+        parentId,
+        targetType: 'post',
+        targetId: postId,
+        likes: 0,
+        isPinned: '0',
+        createdAt: new Date().toISOString(),
+        username: authUser.email?.split('@')[0],
+        displayName: authUser.email?.split('@')[0],
+        avatarUrl: '',
+      }
+      setLocalComments(prev => [...prev, fallback])
+    } finally {
+      setSending(false)
+      setDraft('')
+      setReplyingTo(null)
     }
-    setLocalComments(prev => [...prev, newComment])
-    setDraft('')
-    setReplyingTo(null)
   }
 
-  function handleDelete(id: string) {
-    setLocalComments(prev => prev.filter(c => c.id !== id))
+  async function handleDelete(id: string) {
+    setDeletedIds(prev => new Set([...prev, id]))
+    try {
+      await deleteComment(id, postId)
+      queryClient.invalidateQueries({ queryKey: ['comments', postId] })
+    } catch {
+      // undo optimistic
+      setDeletedIds(prev => { const s = new Set(prev); s.delete(id); return s })
+    }
   }
 
   function handleReport(_id: string) {
-    // no-op for mock
+    // TODO: report flow
   }
 
   const totalCount = listItems.length
@@ -213,10 +230,8 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.sheet}>
-          {/* Handle */}
           <View style={styles.handle} />
 
-          {/* Header */}
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>
               Comments{totalCount > 0 ? ` (${totalCount})` : ''}
@@ -226,14 +241,13 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
             </Pressable>
           </View>
 
-          {/* Comment list */}
           <FlatList
             data={listItems}
             keyExtractor={item => item.comment.id}
             renderItem={({ item }) => (
               <CommentRow
                 comment={item.comment}
-                isMine={item.comment.authorUserId === MOCK_USER_ID}
+                isMine={item.comment.authorUserId === authUser?.id}
                 isReply={item.isReply}
                 onDelete={handleDelete}
                 onReport={handleReport}
@@ -250,7 +264,6 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
             keyboardShouldPersistTaps="handled"
           />
 
-          {/* Replying-to banner */}
           {replyingTo && (
             <View style={styles.replyBanner}>
               <Text style={styles.replyBannerText}>
@@ -263,13 +276,25 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
             </View>
           )}
 
-          {/* Input row */}
           <View style={styles.inputRow}>
-            <InitialsAvatar name="Cappuccino Moto" size={32} />
+            {authUser ? (
+              <InitialsAvatar
+                name={authUser.email?.split('@')[0] ?? '?'}
+                size={32}
+              />
+            ) : (
+              <InitialsAvatar name="?" size={32} />
+            )}
             <TextInput
               ref={inputRef}
               style={styles.input}
-              placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Add a comment…'}
+              placeholder={
+                !authUser
+                  ? 'Sign in to comment…'
+                  : replyingTo
+                  ? `Reply to @${replyingTo.username}…`
+                  : 'Add a comment…'
+              }
               placeholderTextColor={colors.textTertiary}
               value={draft}
               onChangeText={setDraft}
@@ -277,13 +302,14 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
               maxLength={500}
               returnKeyType="send"
               onSubmitEditing={handleSend}
+              editable={!!authUser}
             />
             <Pressable
               onPress={handleSend}
-              style={[styles.sendBtn, !draft.trim() && styles.sendBtnDisabled]}
-              disabled={!draft.trim()}
+              style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+              disabled={!draft.trim() || sending || !authUser}
             >
-              <Send size={18} color={draft.trim() ? colors.accent : colors.textTertiary} />
+              <Send size={18} color={draft.trim() && !sending ? colors.accent : colors.textTertiary} />
             </Pressable>
           </View>
         </View>
@@ -335,7 +361,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   closeBtn: { padding: 4 },
-  // Comment rows
   listContent: {
     paddingVertical: 4,
     flexGrow: 1,
@@ -429,7 +454,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  // Inline actions
   actionRow: {
     flexDirection: 'row',
     gap: 8,
@@ -460,7 +484,6 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
   },
-  // Like
   likeCol: {
     alignItems: 'center',
     gap: 3,
@@ -472,7 +495,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  // Replying-to banner
   replyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -491,7 +513,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
-  // Input
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -521,7 +542,6 @@ const styles = StyleSheet.create({
   sendBtnDisabled: {
     opacity: 0.4,
   },
-  // Empty
   empty: {
     padding: 40,
     alignItems: 'center',

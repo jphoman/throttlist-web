@@ -11,10 +11,10 @@ import {
   Linking,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Svg, { Path as SvgPath } from 'react-native-svg'
 import { ArrowLeft, Heart, MessageCircle, Share2, ExternalLink, MoreHorizontal, ProBadge, X as XIcon } from '@/components/Icons'
-import { fetchPost, fetchBuildParts, fetchComments } from '@/lib/supabaseQueries'
+import { fetchPost, fetchBuildParts, fetchComments, toggleLike, updatePost, deletePost } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
@@ -39,6 +39,7 @@ export default function PostDetailScreen() {
   const [tagsSheetOpen, setTagsSheetOpen] = useState(false)
 
   const { user: authUser } = useAuth()
+  const queryClient = useQueryClient()
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['post', postId],
@@ -194,7 +195,12 @@ export default function PostDetailScreen() {
 
         {/* Action bar */}
         <View style={styles.actionBar}>
-          <Pressable style={styles.actionBtn} onPress={() => setLiked(v => !v)}>
+          <Pressable style={styles.actionBtn} onPress={() => {
+            if (!authUser) return
+            const next = !liked
+            setLiked(next)
+            toggleLike(authUser.id, post.id, liked).catch(() => setLiked(liked))
+          }}>
             <Heart
               size={24}
               color={liked ? colors.accent : colors.textPrimary}
@@ -371,12 +377,25 @@ export default function PostDetailScreen() {
           parts={allParts}
           isPinned={isPinned}
           onClose={() => setEditSheetOpen(false)}
-          onSave={(updates) => {
+          onSave={async (updates) => {
             setLocalCaption(updates.caption)
             setLocalTaggedIds(updates.taggedPartIds)
+            await updatePost(post.id, {
+              caption: updates.caption,
+              taggedPartIds: updates.taggedPartIds,
+            })
+            queryClient.invalidateQueries({ queryKey: ['post', postId] })
           }}
-          onTogglePin={() => setIsPinned(v => !v)}
-          onDelete={() => setDeleted(true)}
+          onTogglePin={async () => {
+            const next = !isPinned
+            setIsPinned(next)
+            await updatePost(post.id, { isPinned: next })
+          }}
+          onDelete={async () => {
+            setDeleted(true)
+            await deletePost(post.id)
+            queryClient.invalidateQueries({ queryKey: ['feed-posts'] })
+          }}
         />
       )}
     </View>
