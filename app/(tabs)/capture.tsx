@@ -40,7 +40,7 @@ export default function CaptureScreen() {
   const cameraRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  const { data: myBuilds = [] } = useQuery({
+  const { data: myBuilds = [], isLoading: buildsLoading } = useQuery({
     queryKey: ['my-builds', userId],
     queryFn: () => fetchUserBuilds(userId),
     enabled: !!userId,
@@ -143,6 +143,29 @@ export default function CaptureScreen() {
     handlePickFromGallery()
   }
 
+  // Gate: no builds yet — show full-screen prompt, block camera entirely
+  const hasNoBuilds = !buildsLoading && userId && myBuilds.length === 0
+
+  if (hasNoBuilds) {
+    return (
+      <View style={styles.gate}>
+        <Pressable style={styles.closeGate} onPress={() => router.replace('/(tabs)/feed')}>
+          <X size={22} color="rgba(255,255,255,0.6)" />
+        </Pressable>
+        <Pressable
+          style={styles.gateCard}
+          onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
+        >
+          <View style={styles.gatePlus}>
+            <Plus size={26} color="#fff" />
+          </View>
+          <Text style={styles.gateTitle}>Add a build{'\n'}to start posting</Text>
+          <Text style={styles.gateSub}>You need at least one build before you can share a post.</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
   return (
     <View style={styles.root}>
       <View ref={cameraRef} style={styles.camera} />
@@ -169,21 +192,6 @@ export default function CaptureScreen() {
       <Pressable style={styles.shutter} onPress={handleShutter}>
         <View style={styles.shutterInner} />
       </Pressable>
-
-      {/* No-builds overlay */}
-      {myBuilds.length === 0 && (
-        <Pressable
-          style={styles.noBuildsOverlay}
-          onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
-        >
-          <View style={styles.noBuildsCard}>
-            <View style={styles.noBuildsPlus}>
-              <Plus size={22} color="#fff" />
-            </View>
-            <Text style={styles.noBuildsText}>Add a build{'\n'}to start posting</Text>
-          </View>
-        </Pressable>
-      )}
 
       {/* Build selector — bottom right */}
       <View style={styles.buildScrollWrap}>
@@ -293,30 +301,47 @@ const styles = StyleSheet.create({
   buildThumbSelected: { borderColor: colors.accent, opacity: 1 },
   buildName: { color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: '600', textAlign: 'center', width: 58 },
   buildNameSelected: { color: '#fff' },
-  noBuildsOverlay: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 56 : 36,
-    right: 80,
-  },
-  noBuildsCard: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    borderRadius: 12,
-    padding: 14,
+  gate: {
+    flex: 1,
+    backgroundColor: '#000',
     alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
   },
-  noBuildsPlus: {
-    width: 40, height: 40, borderRadius: 20,
+  closeGate: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 54 : 20,
+    left: 16,
+    padding: 10,
+  },
+  gateCard: {
+    alignItems: 'center',
+    gap: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 40,
+    paddingHorizontal: 36,
+    width: '100%',
+    maxWidth: 320,
+  },
+  gatePlus: {
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: colors.accent,
     alignItems: 'center', justifyContent: 'center',
   },
-  noBuildsText: {
+  gateTitle: {
     color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 28,
+  },
+  gateSub: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
   },
 })
