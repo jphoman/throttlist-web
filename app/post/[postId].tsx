@@ -64,7 +64,7 @@ export default function PostDetailScreen() {
       <View style={styles.container}>
         <View style={styles.photoSkeleton} />
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft size={20} color={colors.textSecondary} />
+          <ArrowLeft size={20} color="rgba(255,255,255,0.5)" />
         </Pressable>
       </View>
     )
@@ -74,7 +74,7 @@ export default function PostDetailScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft size={20} color={colors.textSecondary} />
+          <ArrowLeft size={20} color="rgba(255,255,255,0.5)" />
         </Pressable>
         <Text style={styles.notFound}>Post not found</Text>
       </View>
@@ -96,7 +96,7 @@ export default function PostDetailScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft size={20} color={colors.textSecondary} />
+          <ArrowLeft size={20} color="rgba(255,255,255,0.5)" />
         </Pressable>
         <Text style={styles.notFound}>Post deleted</Text>
       </View>
@@ -108,7 +108,7 @@ export default function PostDetailScreen() {
       {/* Floating nav */}
       <View style={styles.navRow}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft size={20} color={colors.textSecondary} />
+          <ArrowLeft size={20} color="rgba(255,255,255,0.5)" />
         </Pressable>
         {isOwner && (
           <Pressable onPress={() => setEditSheetOpen(true)} style={styles.backBtn}>
@@ -421,8 +421,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   backBtn: {
-    backgroundColor: colors.surface1,
-    borderRadius: 20,
     padding: 8,
   },
   photoSkeleton: {
