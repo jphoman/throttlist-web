@@ -1,15 +1,19 @@
--- Fix missing auth.identities rows for seed users.
+-- Fix seed user sign-in: populates auth.identities and backfills GoTrue v2 columns.
 -- Run once in the Supabase SQL Editor.
 --
--- Background: inserting directly into auth.users does not auto-populate
--- auth.identities, which GoTrue (Supabase auth) requires to complete any
--- sign-in. Without it, /auth/v1/token returns 500 "Database error querying
--- schema" for every seed account.
---
--- This script detects whether the newer GoTrue schema (provider_id PK) or the
--- older schema (id PK) is in use and runs the correct INSERT accordingly.
+-- Two root causes of "500 Database error querying schema" on seed accounts:
+--   1. auth.identities rows are missing (GoTrue requires them for every sign-in).
+--   2. GoTrue v2 added is_sso_user / is_anonymous columns; direct SQL inserts
+--      leave them NULL which GoTrue cannot handle.
 
 BEGIN;
+
+-- ── Fix 1: Backfill GoTrue v2 columns ────────────────────────────────────────
+UPDATE auth.users
+SET
+  is_sso_user  = COALESCE(is_sso_user,  false),
+  is_anonymous = COALESCE(is_anonymous, false)
+WHERE email LIKE '%throttlist.app%';
 
 DO $$
 DECLARE

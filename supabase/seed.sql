@@ -84,6 +84,14 @@ BEGIN
      '{"provider":"email","providers":["email"]}')
   ON CONFLICT (id) DO NOTHING;
 
+  -- ── 1a. Backfill GoTrue v2 columns that direct SQL inserts leave NULL ───────
+  -- GoTrue v2 added is_sso_user and is_anonymous; NULL values cause sign-in 500s.
+  UPDATE auth.users
+  SET
+    is_sso_user  = COALESCE(is_sso_user,  false),
+    is_anonymous = COALESCE(is_anonymous, false)
+  WHERE email LIKE '%throttlist.app%';
+
   -- ── 1b. Auth identities (required by GoTrue for sign-in to succeed) ────────
   -- Direct inserts into auth.users don't auto-populate auth.identities.
   -- Without these rows every seed login returns 500 "Database error querying schema".
