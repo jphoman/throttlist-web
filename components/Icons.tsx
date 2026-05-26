@@ -201,7 +201,7 @@ const CATEGORY_ICON_MAP: Record<string, React.ComponentProps<typeof MaterialComm
   drones:      'drone',
   pc_gaming:   'monitor',
   audio_hifi:  'speaker',
-  keyboards:   'keyboard',
+  cameras:     'camera',
   guitars:     'guitar-electric',
   '3d_printing': 'printer-3d',
   camping:     'tent',

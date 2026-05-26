@@ -57,7 +57,8 @@ export interface LinkedProduct {
   trackingUrl: string
   x: number   // 0-1 relative position on image
   y: number
-  source: 'amazon' | 'web'
+  source: 'amazon' | 'web' | 'manual'
+  category?: string
 }
 
 export interface Post {

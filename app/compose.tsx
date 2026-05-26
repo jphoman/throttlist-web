@@ -20,6 +20,7 @@ import { colors } from '@/constants/throttlist'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { fetchUserBuilds, createPost } from '@/lib/supabaseQueries'
+import { BUILD_CATEGORIES } from '@/constants/buildTypes'
 import type { LinkedProduct } from '@/types'
 
 // ─── Affiliate config ─────────────────────────────────────────────────────────
@@ -64,70 +65,82 @@ function parseUrl(rawUrl: string): { title: string; source: 'amazon' | 'web'; do
 interface ProductSheetProps {
   visible: boolean
   userId: string
+  partCategories: string[]
   onConfirm: (product: Omit<LinkedProduct, 'x' | 'y'>) => void
   onClose: () => void
 }
 
-function ProductSheet({ visible, userId, onConfirm, onClose }: ProductSheetProps) {
+type SheetMode = 'link' | 'manual'
+
+function ProductSheet({ visible, userId, partCategories, onConfirm, onClose }: ProductSheetProps) {
+  const [mode, setMode] = useState<SheetMode>('link')
   const [searchQuery, setSearchQuery] = useState('')
   const [pastedUrl, setPastedUrl] = useState('')
-  const [manualTitle, setManualTitle] = useState('')
-  const [step, setStep] = useState<'search' | 'confirm'>('search')
+  const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('')
+  const [urlStep, setUrlStep] = useState<'search' | 'confirm'>('search')
   const [urlInfo, setUrlInfo] = useState<{ title: string; source: 'amazon' | 'web'; domain: string } | null>(null)
+
+  function reset() {
+    setSearchQuery('')
+    setPastedUrl('')
+    setTitle('')
+    setCategory('')
+    setUrlStep('search')
+    setUrlInfo(null)
+  }
 
   function handleUrlChange(text: string) {
     setPastedUrl(text)
     if (text.length > 10 && (text.includes('amazon.') || text.includes('http'))) {
       const info = parseUrl(text)
       setUrlInfo(info)
-      if (info.title) setManualTitle(info.title)
-      if (info.domain) setStep('confirm')
+      if (info.title && !title) setTitle(info.title)
+      if (info.domain) setUrlStep('confirm')
     } else {
       setUrlInfo(null)
-      setStep('search')
+      setUrlStep('search')
     }
   }
 
   function handleOpenAmazon() {
-    const q = encodeURIComponent(searchQuery || 'motorcycle parts')
+    const q = encodeURIComponent(searchQuery || 'parts accessories')
     Linking.openURL(`https://www.amazon.com/s?k=${q}&tag=${AMAZON_TAG}`)
   }
 
   function handleConfirm() {
-    if (!manualTitle.trim() || !pastedUrl.trim()) return
+    if (!title.trim()) return
+    if (mode === 'link' && !pastedUrl.trim()) return
+
     const product: Omit<LinkedProduct, 'x' | 'y'> = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      title: manualTitle.trim(),
-      brand: urlInfo?.domain ?? undefined,
-      rawUrl: pastedUrl.trim(),
-      trackingUrl: buildTrackingUrl(pastedUrl.trim(), userId),
-      source: urlInfo?.source ?? 'web',
+      title: title.trim(),
+      brand: mode === 'link' ? (urlInfo?.domain ?? undefined) : undefined,
+      rawUrl: mode === 'link' ? pastedUrl.trim() : '',
+      trackingUrl: mode === 'link' ? buildTrackingUrl(pastedUrl.trim(), userId) : '',
+      source: mode === 'manual' ? 'manual' : (urlInfo?.source ?? 'web'),
+      category: category || undefined,
     }
     onConfirm(product)
-    // Reset
-    setSearchQuery('')
-    setPastedUrl('')
-    setManualTitle('')
-    setUrlInfo(null)
-    setStep('search')
+    reset()
   }
 
   function handleClose() {
-    setSearchQuery('')
-    setPastedUrl('')
-    setManualTitle('')
-    setUrlInfo(null)
-    setStep('search')
+    reset()
     onClose()
   }
 
-  const canConfirm = manualTitle.trim().length > 0 && pastedUrl.trim().length > 0
+  function switchMode(m: SheetMode) {
+    setMode(m)
+    reset()
+  }
+
+  const canConfirm = title.trim().length > 0 && (mode === 'manual' || pastedUrl.trim().length > 0)
 
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
       <Pressable style={sh.backdrop} onPress={handleClose}>
         <Pressable style={sh.sheet} onPress={e => e.stopPropagation()}>
-          {/* Handle */}
           <View style={sh.handle} />
 
           {/* Header */}
@@ -138,78 +151,138 @@ function ProductSheet({ visible, userId, onConfirm, onClose }: ProductSheetProps
             </Pressable>
           </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {/* Step 1: Search */}
-            <View style={sh.section}>
-              <Text style={sh.sectionLabel}>SEARCH</Text>
-              <View style={sh.row}>
-                <TextInput
-                  style={sh.input}
-                  placeholder="Product name, brand, model…"
-                  placeholderTextColor={colors.textTertiary}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  returnKeyType="search"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Pressable style={sh.amazonBtn} onPress={handleOpenAmazon}>
-                  <ExternalLink size={14} color="#fff" />
-                  <Text style={sh.amazonBtnText}>Amazon</Text>
-                </Pressable>
-              </View>
-              <Text style={sh.hint}>
-                Search opens Amazon in your browser. Copy the product URL, then paste it below.
-              </Text>
-            </View>
+          {/* Mode tabs */}
+          <View style={sh.modeTabs}>
+            <Pressable
+              style={[sh.modeTab, mode === 'link' && sh.modeTabActive]}
+              onPress={() => switchMode('link')}
+            >
+              <ExternalLink size={13} color={mode === 'link' ? '#fff' : colors.textSecondary} />
+              <Text style={[sh.modeTabText, mode === 'link' && sh.modeTabTextActive]}>Link Product</Text>
+            </Pressable>
+            <Pressable
+              style={[sh.modeTab, mode === 'manual' && sh.modeTabActive]}
+              onPress={() => switchMode('manual')}
+            >
+              <Tag size={13} color={mode === 'manual' ? '#fff' : colors.textSecondary} />
+              <Text style={[sh.modeTabText, mode === 'manual' && sh.modeTabTextActive]}>Manual Tag</Text>
+            </Pressable>
+          </View>
 
-            {/* Step 2: Paste URL */}
-            <View style={sh.section}>
-              <Text style={sh.sectionLabel}>PASTE PRODUCT URL</Text>
-              <TextInput
-                style={[sh.input, sh.urlInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-                placeholder="https://www.amazon.com/…"
-                placeholderTextColor={colors.textTertiary}
-                value={pastedUrl}
-                onChangeText={handleUrlChange}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
-              {urlInfo && (
-                <View style={sh.urlPreview}>
-                  <View style={[sh.sourceDot, urlInfo.source === 'amazon' && sh.sourceDotAmazon]} />
-                  <Text style={sh.urlDomain}>{urlInfo.domain}</Text>
-                  {urlInfo.source === 'amazon' && (
-                    <View style={sh.affiliatePill}>
-                      <Text style={sh.affiliatePillText}>affiliate tracked</Text>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+            {/* ── LINK mode ── */}
+            {mode === 'link' && (
+              <>
+                <View style={sh.section}>
+                  <Text style={sh.sectionLabel}>SEARCH</Text>
+                  <View style={sh.row}>
+                    <TextInput
+                      style={[sh.input, { flex: 1 }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                      placeholder="Product name, brand, model…"
+                      placeholderTextColor={colors.textTertiary}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      returnKeyType="search"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Pressable style={sh.amazonBtn} onPress={handleOpenAmazon}>
+                      <ExternalLink size={14} color="#fff" />
+                      <Text style={sh.amazonBtnText}>Amazon</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={sh.hint}>Opens Amazon in your browser — copy the URL, then paste below.</Text>
+                </View>
+
+                <View style={sh.section}>
+                  <Text style={sh.sectionLabel}>PASTE PRODUCT URL</Text>
+                  <TextInput
+                    style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                    placeholder="https://www.amazon.com/…"
+                    placeholderTextColor={colors.textTertiary}
+                    value={pastedUrl}
+                    onChangeText={handleUrlChange}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                  />
+                  {urlInfo && (
+                    <View style={sh.urlPreview}>
+                      <View style={[sh.sourceDot, urlInfo.source === 'amazon' && sh.sourceDotAmazon]} />
+                      <Text style={sh.urlDomain}>{urlInfo.domain}</Text>
+                      {urlInfo.source === 'amazon' && (
+                        <View style={sh.affiliatePill}>
+                          <Text style={sh.affiliatePillText}>affiliate tracked</Text>
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
-              )}
-            </View>
 
-            {/* Step 3: Product title (auto-filled or manual) */}
-            {step === 'confirm' && (
-              <View style={sh.section}>
-                <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
-                <TextInput
-                  style={[sh.input, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-                  placeholder="Enter or edit product name"
-                  placeholderTextColor={colors.textTertiary}
-                  value={manualTitle}
-                  onChangeText={setManualTitle}
-                  autoCapitalize="words"
-                />
-              </View>
+                {urlStep === 'confirm' && (
+                  <View style={sh.section}>
+                    <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
+                    <TextInput
+                      style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                      placeholder="Enter or edit product name"
+                      placeholderTextColor={colors.textTertiary}
+                      value={title}
+                      onChangeText={setTitle}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                )}
+
+                <View style={sh.affiliateNote}>
+                  <Text style={sh.affiliateNoteText}>
+                    🔗 A unique tracking link is generated per tag. Throttlist earns a commission when followers purchase — revenue is shared monthly with contributing members.
+                  </Text>
+                </View>
+              </>
             )}
 
-            {/* Affiliate note */}
-            <View style={sh.affiliateNote}>
-              <Text style={sh.affiliateNoteText}>
-                🔗 A unique tracking link is generated for each tag. Throttlist earns a commission when followers click and purchase — revenue is shared monthly with contributing members.
-              </Text>
-            </View>
+            {/* ── MANUAL mode ── */}
+            {mode === 'manual' && (
+              <>
+                <View style={sh.section}>
+                  <Text style={sh.sectionLabel}>PRODUCT / PART NAME</Text>
+                  <TextInput
+                    style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                    placeholder="e.g. Custom powder coat, Vintage seat, Hand-stitched grips…"
+                    placeholderTextColor={colors.textTertiary}
+                    value={title}
+                    onChangeText={setTitle}
+                    autoCapitalize="words"
+                  />
+                </View>
+                <View style={sh.manualNote}>
+                  <Text style={sh.manualNoteText}>
+                    Use this for custom fabrication, one-off parts, vintage finds, or anything without a purchase link.
+                  </Text>
+                </View>
+              </>
+            )}
+
+            {/* ── Category picker (both modes) ── */}
+            {partCategories.length > 0 && (
+              <View style={sh.section}>
+                <Text style={sh.sectionLabel}>CATEGORY</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sh.catRow}>
+                  {partCategories.map(cat => (
+                    <Pressable
+                      key={cat}
+                      style={[sh.catChip, category === cat && sh.catChipActive]}
+                      onPress={() => setCategory(prev => prev === cat ? '' : cat)}
+                    >
+                      <Text style={[sh.catChipText, category === cat && sh.catChipTextActive]}>
+                        {cat}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
             {/* Confirm */}
             <Pressable
@@ -218,7 +291,9 @@ function ProductSheet({ visible, userId, onConfirm, onClose }: ProductSheetProps
               disabled={!canConfirm}
             >
               <Tag size={16} color="#fff" />
-              <Text style={sh.confirmBtnText}>Tag This Product</Text>
+              <Text style={sh.confirmBtnText}>
+                {mode === 'manual' ? 'Add Manual Tag' : 'Tag This Product'}
+              </Text>
             </Pressable>
           </ScrollView>
         </Pressable>
@@ -314,6 +389,58 @@ const sh = StyleSheet.create({
     borderColor: colors.border,
   },
   affiliateNoteText: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
+  modeTabs: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: colors.surface2,
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  modeTabActive: { backgroundColor: colors.accent },
+  modeTabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  modeTabTextActive: { color: '#fff' },
+  fullInput: { flex: 0, width: '100%' },
+  manualNote: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    backgroundColor: colors.surface2,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  manualNoteText: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
+  catRow: {
+    flexDirection: 'row',
+    gap: 7,
+    paddingBottom: 4,
+  },
+  catChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  catChipActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  catChipText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  catChipTextActive: { color: '#fff' },
   confirmBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -357,6 +484,8 @@ export default function ComposeScreen() {
   })
 
   const selectedBuild = myBuilds.find(b => b.id === selectedBuildId)
+  const buildCategoryDef = BUILD_CATEGORIES.find(c => c.id === selectedBuild?.buildType)
+  const partCategories = buildCategoryDef?.partCategories ?? []
 
   async function uploadPhoto(uri: string): Promise<string | null> {
     try {
@@ -581,14 +710,20 @@ export default function ComposeScreen() {
                     <View style={[
                       styles.productSource,
                       tag.source === 'amazon' && styles.productSourceAmazon,
+                      tag.source === 'manual' && styles.productSourceManual,
                     ]}>
-                      <Text style={styles.productSourceText}>
-                        {tag.source === 'amazon' ? 'AMZ' : 'WEB'}
+                      <Text style={[
+                        styles.productSourceText,
+                        tag.source === 'manual' && styles.productSourceTextManual,
+                      ]}>
+                        {tag.source === 'amazon' ? 'AMZ' : tag.source === 'manual' ? 'MAN' : 'WEB'}
                       </Text>
                     </View>
                     <View style={styles.productRowText}>
                       <Text style={styles.productTitle} numberOfLines={1}>{tag.title}</Text>
-                      <Text style={styles.productDomain} numberOfLines={1}>{tag.brand}</Text>
+                      <Text style={styles.productDomain} numberOfLines={1}>
+                        {[tag.category, tag.brand].filter(Boolean).join(' · ')}
+                      </Text>
                     </View>
                   </View>
                   <Pressable onPress={() => handleRemoveTag(tag.id)} style={styles.productRemove}>
@@ -635,6 +770,7 @@ export default function ComposeScreen() {
       <ProductSheet
         visible={productSheetOpen}
         userId={userId}
+        partCategories={partCategories}
         onConfirm={handleProductConfirm}
         onClose={() => { setProductSheetOpen(false); setPendingPin(null) }}
       />
@@ -832,7 +968,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   productSourceAmazon: { backgroundColor: '#FF990022', borderWidth: 1, borderColor: '#FF990044' },
+  productSourceManual: { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent + '44' },
   productSourceText: { color: '#FF9900', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  productSourceTextManual: { color: colors.accent },
   productRowText: { flex: 1 },
   productTitle: { color: colors.textPrimary, fontSize: 13, fontWeight: '500' },
   productDomain: { color: colors.textTertiary, fontSize: 11, marginTop: 1 },
