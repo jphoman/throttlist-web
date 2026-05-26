@@ -38,6 +38,7 @@ import {
   toggleBuildFollow,
   addComment,
   updatePost,
+  updateBuild,
   deletePost,
 } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
@@ -83,7 +84,7 @@ export default function BuildProfileScreen() {
   const [buildEditOpen, setBuildEditOpen] = useState(false)
   const [editingPost, setEditingPost] = useState<Post | null>(null)
   const [pinnedPostId, setPinnedPostId] = useState<string | null>(null)
-  const [localBuildOverrides, setLocalBuildOverrides] = useState<{ nickname?: string; tags?: string[]; isPrivate?: boolean } | null>(null)
+  const [localBuildOverrides, setLocalBuildOverrides] = useState<{ nickname?: string; tags?: string[]; isPrivate?: boolean; coverPhotoUrl?: string } | null>(null)
   const [followersSheetOpen, setFollowersSheetOpen] = useState(false)
   const [localPostEdits, setLocalPostEdits] = useState<Record<string, { caption?: string; taggedPartIds?: string[] }>>({})
   const [deletedPostIds, setDeletedPostIds] = useState<string[]>([])
@@ -196,6 +197,7 @@ export default function BuildProfileScreen() {
   const effectiveTags: string[] = localBuildOverrides?.tags
     ?? (() => { try { return JSON.parse(build.tags) } catch { return [] } })()
   const effectiveNickname = localBuildOverrides?.nickname ?? build.nickname
+  const effectiveCoverPhotoUrl = localBuildOverrides?.coverPhotoUrl ?? build.coverPhotoUrl
 
   const tags = effectiveTags
 
@@ -234,8 +236,8 @@ export default function BuildProfileScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Cover photo */}
-        {build.coverPhotoUrl ? (
-          <Image source={{ uri: build.coverPhotoUrl }} style={styles.cover} resizeMode="cover" />
+        {effectiveCoverPhotoUrl ? (
+          <Image source={{ uri: effectiveCoverPhotoUrl }} style={styles.cover} resizeMode="cover" />
         ) : (
           <View style={[styles.cover, styles.coverFallback]} />
         )}
@@ -496,8 +498,27 @@ export default function BuildProfileScreen() {
       <BuildEditSheet
         visible={buildEditOpen}
         build={build}
+        posts={data.posts}
+        userId={authUser?.id ?? ''}
         onClose={() => setBuildEditOpen(false)}
-        onSave={(updates) => setLocalBuildOverrides(prev => ({ ...prev, ...updates }))}
+        onSave={async (updates) => {
+          // Optimistic local update
+          setLocalBuildOverrides(prev => ({
+            ...prev,
+            ...(updates.nickname !== undefined ? { nickname: updates.nickname } : {}),
+            ...(updates.tags !== undefined ? { tags: updates.tags } : {}),
+            ...(updates.isPrivate !== undefined ? { isPrivate: updates.isPrivate } : {}),
+            ...(updates.coverPhotoUrl ? { coverPhotoUrl: updates.coverPhotoUrl } : {}),
+          }))
+          // Persist to DB
+          await updateBuild(build.id, {
+            ...(updates.nickname !== undefined ? { nickname: updates.nickname } : {}),
+            ...(updates.tags !== undefined ? { tags: updates.tags } : {}),
+            ...(updates.isPrivate !== undefined ? { status: updates.isPrivate ? 'private' : 'active' } : {}),
+            ...(updates.coverPhotoUrl ? { cover_photo_url: updates.coverPhotoUrl } : {}),
+          })
+          queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
+        }}
       />
 
       {/* Followers sheet */}

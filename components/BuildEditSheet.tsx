@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   View,
   Text,
@@ -10,28 +10,35 @@ import {
   Switch,
   Platform,
   KeyboardAvoidingView,
-  Alert,
+  Image,
+  ActivityIndicator,
 } from 'react-native'
 import { X, Camera, Plus, Lock, Globe } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
-import type { Build } from '@/types'
+import { supabase } from '@/lib/supabase'
+import type { Build, Post } from '@/types'
 
 interface BuildEditSheetProps {
   visible: boolean
   build: Build
+  posts?: Post[]
+  userId?: string
   onClose: () => void
   onSave: (updates: {
     nickname?: string
     tags?: string[]
     isPrivate?: boolean
+    coverPhotoUrl?: string
   }) => void
 }
 
-export default function BuildEditSheet({ visible, build, onClose, onSave }: BuildEditSheetProps) {
+export default function BuildEditSheet({ visible, build, posts = [], userId, onClose, onSave }: BuildEditSheetProps) {
   const [nickname, setNickname] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
+  const [selectedCoverUrl, setSelectedCoverUrl] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (visible) {
@@ -39,8 +46,54 @@ export default function BuildEditSheet({ visible, build, onClose, onSave }: Buil
       const parsed: string[] = (() => { try { return JSON.parse(build.tags) } catch { return [] } })()
       setTags(parsed)
       setIsPrivate(build.status === 'private')
+      setSelectedCoverUrl(null) // reset selection each time sheet opens
     }
   }, [visible, build])
+
+  // Collect all unique photo URLs from posts
+  const postPhotos = useMemo(() => {
+    const seen = new Set<string>()
+    const result: string[] = []
+    posts.forEach(p => {
+      try {
+        const photos: string[] = JSON.parse(p.photos)
+        photos.forEach(url => {
+          if (url && !seen.has(url)) {
+            seen.add(url)
+            result.push(url)
+          }
+        })
+      } catch {}
+    })
+    return result
+  }, [posts])
+
+  async function handlePickImage() {
+    if (Platform.OS !== 'web' || !userId) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      setUploading(true)
+      try {
+        const ext = file.name.split('.').pop() ?? 'jpg'
+        const path = `covers/${userId}/${Date.now()}.${ext}`
+        const { error } = await supabase.storage
+          .from('posts')
+          .upload(path, file, { contentType: file.type, upsert: false })
+        if (error) throw error
+        const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+        setSelectedCoverUrl(publicUrl)
+      } catch (err) {
+        console.error('Cover upload failed', err)
+      } finally {
+        setUploading(false)
+      }
+    }
+    input.click()
+  }
 
   function addTag() {
     const raw = tagInput.trim().toLowerCase().replace(/^#/, '').replace(/\s+/g, '-')
@@ -54,9 +107,16 @@ export default function BuildEditSheet({ visible, build, onClose, onSave }: Buil
   }
 
   function handleSave() {
-    onSave({ nickname: nickname.trim(), tags, isPrivate })
+    onSave({
+      nickname: nickname.trim(),
+      tags,
+      isPrivate,
+      ...(selectedCoverUrl ? { coverPhotoUrl: selectedCoverUrl } : {}),
+    })
     onClose()
   }
+
+  const displayCoverUrl = selectedCoverUrl || build.coverPhotoUrl || null
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -86,9 +146,73 @@ export default function BuildEditSheet({ visible, build, onClose, onSave }: Buil
               {/* Cover photo */}
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Cover Photo</Text>
-                <Pressable style={styles.coverPhotoBtn}>
-                  <Camera size={18} color={colors.textSecondary} />
-                  <Text style={styles.coverPhotoBtnText}>Change Cover Photo</Text>
+
+                {/* Current cover preview */}
+                {displayCoverUrl ? (
+                  <View style={styles.currentCoverWrap}>
+                    <Image
+                      source={{ uri: displayCoverUrl }}
+                      style={styles.currentCover}
+                      resizeMode="cover"
+                    />
+                    {selectedCoverUrl && (
+                      <View style={styles.selectedBadge}>
+                        <Text style={styles.selectedBadgeText}>New selection</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={[styles.currentCover, styles.currentCoverEmpty]}>
+                    <Camera size={22} color={colors.textTertiary} />
+                    <Text style={styles.noCoverText}>No cover photo yet</Text>
+                  </View>
+                )}
+
+                {/* Selectable post thumbnails */}
+                {postPhotos.length > 0 && (
+                  <>
+                    <Text style={styles.coverPickerLabel}>Choose from posts</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.thumbScrollContent}
+                      style={styles.thumbScroll}
+                    >
+                      {postPhotos.map((url, i) => {
+                        const isSelected = selectedCoverUrl === url
+                        return (
+                          <Pressable
+                            key={url + i}
+                            onPress={() => setSelectedCoverUrl(isSelected ? null : url)}
+                            style={[styles.thumbOption, isSelected && styles.thumbOptionSelected]}
+                          >
+                            <Image source={{ uri: url }} style={styles.thumbOptionImg} resizeMode="cover" />
+                            {isSelected && (
+                              <View style={styles.thumbCheckOverlay}>
+                                <Text style={styles.thumbCheckText}>✓</Text>
+                              </View>
+                            )}
+                          </Pressable>
+                        )
+                      })}
+                    </ScrollView>
+                  </>
+                )}
+
+                {/* Upload new image */}
+                <Pressable
+                  style={styles.coverPhotoBtn}
+                  onPress={handlePickImage}
+                  disabled={uploading || !userId}
+                >
+                  {uploading ? (
+                    <ActivityIndicator size="small" color={colors.textSecondary} />
+                  ) : (
+                    <>
+                      <Camera size={18} color={colors.textSecondary} />
+                      <Text style={styles.coverPhotoBtnText}>Upload new image</Text>
+                    </>
+                  )}
                 </Pressable>
               </View>
 
@@ -231,7 +355,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   closeBtn: { padding: 4 },
-  scroll: { maxHeight: 500 },
+  scroll: { maxHeight: 520 },
   scrollContent: { paddingBottom: 8 },
   // Sections
   section: {
@@ -250,6 +374,86 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   // Cover photo
+  currentCoverWrap: {
+    position: 'relative',
+    marginBottom: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  currentCover: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    backgroundColor: colors.surface2,
+  },
+  currentCoverEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.surface3,
+    borderStyle: 'dashed',
+    marginBottom: 10,
+  },
+  noCoverText: {
+    color: colors.textTertiary,
+    fontSize: 13,
+  },
+  selectedBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  selectedBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  coverPickerLabel: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  thumbScroll: {
+    marginBottom: 10,
+  },
+  thumbScrollContent: {
+    gap: 8,
+    paddingRight: 4,
+  },
+  thumbOption: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  thumbOptionSelected: {
+    borderColor: colors.accent,
+  },
+  thumbOptionImg: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbCheckOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbCheckText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+  },
   coverPhotoBtn: {
     flexDirection: 'row',
     alignItems: 'center',

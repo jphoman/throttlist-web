@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Bell, Compass, ChevronDown, X as XIcon } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFeed as fetchFeedFromSupabase, fetchFollowedFeed, fetchFollowedBuilds, fetchLikedPostIds } from '@/lib/supabaseQueries'
+import { fetchFollowedFeed, fetchFollowedBuilds, fetchLikedPostIds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
@@ -56,11 +56,8 @@ export default function FeedScreen() {
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['feed-posts', sortMode, userId],
-    queryFn: () =>
-      sortMode === 'for-you' && userId
-        ? fetchFollowedFeed(userId, 40)
-        : fetchFeedFromSupabase(40, 0, userId || undefined),
-    enabled: sortMode === 'most-recent' || !!userId,
+    queryFn: () => fetchFollowedFeed(userId, 40, sortMode === 'most-recent' ? userId : undefined),
+    enabled: !!userId,
   })
 
   const { data: myBuilds = [] } = useQuery({
@@ -130,30 +127,31 @@ export default function FeedScreen() {
   }, [typeSearch, availableCategories])
 
   function renderEmptyState() {
-    const isForYouEmpty = sortMode === 'for-you' && !isTypeFiltered && !isBuildFiltered
+    // Both tabs now show following-only posts — empty means no follows (or no posts from follows)
+    const isFollowingEmpty = (sortMode === 'for-you' || sortMode === 'most-recent') && !isTypeFiltered && !isBuildFiltered && !!userId
     return (
       <View style={styles.emptyState}>
         <Compass size={48} color={colors.textTertiary} />
         <Text style={styles.emptyTitle}>
-          {isForYouEmpty
+          {isFollowingEmpty
             ? 'Follow some builds'
             : isTypeFiltered
             ? `No ${selectedTypeDef?.label ?? ''} posts yet`
             : 'No posts yet'}
         </Text>
         <Text style={styles.emptyBody}>
-          {isForYouEmpty
+          {isFollowingEmpty
             ? 'Tap Follow on any build to see their posts here'
             : isTypeFiltered
             ? 'Try a different build type or check back later'
             : 'Be the first — tap + to share your build'}
         </Text>
-        {isForYouEmpty && (
+        {isFollowingEmpty && (
           <Pressable style={styles.discoverBtn} onPress={() => router.push('/discover')}>
             <Text style={styles.discoverBtnText}>Discover builds</Text>
           </Pressable>
         )}
-        {!isTypeFiltered && !isForYouEmpty && (
+        {!isTypeFiltered && !isFollowingEmpty && (
           <Pressable style={styles.discoverBtn} onPress={() => router.push('/capture')}>
             <Text style={styles.discoverBtnText}>Create a post</Text>
           </Pressable>

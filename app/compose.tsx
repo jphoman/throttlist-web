@@ -17,7 +17,7 @@ import { ArrowLeft, ChevronDown, X, Tag, Plus } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
-import { fetchUserBuilds, createPost } from '@/lib/supabaseQueries'
+import { fetchUserBuilds, createPost, updateBuild } from '@/lib/supabaseQueries'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
 import type { LinkedProduct } from '@/types'
 // Shared product tag sheet — single source of truth
@@ -87,6 +87,13 @@ export default function ComposeScreen() {
         linked_products: productTags.length > 0 ? productTags : undefined,
       })
       if (!newPost) throw new Error('Failed to save post. Check the posts table RLS policies.')
+
+      // Auto-set cover photo on the build's first post
+      if (selectedBuildId && !selectedBuild?.coverPhotoUrl) {
+        await updateBuild(selectedBuildId, { cover_photo_url: photoUrl })
+        await queryClient.invalidateQueries({ queryKey: ['my-builds', userId] })
+        await queryClient.invalidateQueries({ queryKey: ['build-profile'] })
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['feed-posts'] })
       router.replace('/feed')

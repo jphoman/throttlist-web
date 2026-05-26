@@ -180,6 +180,20 @@ export async function createBuild(build: {
   return mapBuild(data)
 }
 
+export async function updateBuild(buildId: string, updates: {
+  nickname?: string
+  tags?: string[]
+  status?: string
+  cover_photo_url?: string
+}): Promise<void> {
+  const patch: Record<string, unknown> = {}
+  if (updates.nickname !== undefined) patch.nickname = updates.nickname
+  if (updates.tags !== undefined) patch.tags = updates.tags
+  if (updates.status !== undefined) patch.status = updates.status
+  if (updates.cover_photo_url !== undefined) patch.cover_photo_url = updates.cover_photo_url
+  await supabase.from('builds').update(patch).eq('id', buildId)
+}
+
 // ─── Post queries ─────────────────────────────────────────────────────────────
 
 export async function fetchPost(postId: string): Promise<Post | null> {
@@ -204,19 +218,21 @@ export async function fetchFeed(limit = 20, offset = 0, excludeUserId?: string):
   return data.map(mapPost)
 }
 
-export async function fetchFollowedFeed(userId: string, limit = 20): Promise<Post[]> {
+export async function fetchFollowedFeed(userId: string, limit = 20, excludeUserId?: string): Promise<Post[]> {
   const { data: follows } = await supabase
     .from('build_follows')
     .select('build_id')
     .eq('follower_id', userId)
   const buildIds = (follows ?? []).map((r: any) => r.build_id)
   if (buildIds.length === 0) return []
-  const { data, error } = await supabase
+  let query = supabase
     .from('posts')
     .select('*, profiles!posts_user_id_fkey(username, display_name, avatar_url, is_pro), builds(nickname, slug, year, make, model, cover_photo_url, build_type)')
     .in('build_id', buildIds)
     .order('created_at', { ascending: false })
     .limit(limit)
+  if (excludeUserId) query = query.neq('user_id', excludeUserId)
+  const { data, error } = await query
   if (error || !data) return []
   return data.map(mapPost)
 }

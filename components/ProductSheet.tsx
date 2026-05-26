@@ -3,7 +3,7 @@
  * Used identically during post creation (compose) and post editing (PostEditSheet).
  * Edit this ONE file; both surfaces update automatically.
  */
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   Platform,
   Modal,
   Linking,
+  ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
 import { X, ExternalLink, Tag } from '@/components/Icons'
@@ -39,20 +40,67 @@ export function buildTrackingUrl(rawUrl: string, userId: string): string {
   }
 }
 
-function parseUrl(rawUrl: string): { title: string; source: 'amazon' | 'web'; domain: string } {
+function parseUrl(rawUrl: string): { source: 'amazon' | 'web'; domain: string } {
   try {
     const url = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
     const isAmazon = url.hostname.includes('amazon.')
     const domain = url.hostname.replace(/^www\./, '')
-    if (isAmazon) {
-      const match = url.pathname.match(/^\/([^/]+)\/dp\//)
-      const slug = match?.[1]?.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) ?? ''
-      return { title: slug, source: 'amazon', domain }
-    }
-    return { title: '', source: 'web', domain }
+    return { source: isAmazon ? 'amazon' : 'web', domain }
   } catch {
-    return { title: '', source: 'web', domain: '' }
+    return { source: 'web', domain: '' }
   }
+}
+
+/**
+ * Immediately extract a readable title from the URL slug — no network needed.
+ * Works for Amazon, eBay, RevZilla, and most e-commerce slugs.
+ */
+function extractTitleFromUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
+    const { hostname, pathname } = url
+
+    const toTitle = (s: string) =>
+      s.replace(/[-_+]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim()
+
+    // Amazon: /Product-Slug/dp/ASIN  or  /Product-Slug/gp/product/ASIN
+    if (hostname.includes('amazon.')) {
+      const m = pathname.match(/^\/([^/]+)\/(?:dp|gp)\//)
+      if (m?.[1]) return toTitle(m[1])
+    }
+
+    // eBay: /itm/product-slug  or  /itm/product-slug/ITEMID
+    if (hostname.includes('ebay.')) {
+      const m = pathname.match(/\/itm\/([^/]+)/)
+      if (m?.[1]) return toTitle(m[1]).replace(/\s+\d{7,}$/, '').trim()
+    }
+
+    // Generic: walk path segments right-to-left, pick the first that looks like
+    // a product name (not a pure number, not a short ID, not a known non-name segment)
+    const SKIP = /^(dp|gp|product|products|item|items|p|buy|shop|detail|details|pd|sku|ref|\d+)$/i
+    const segments = pathname.split('/').filter(Boolean)
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const s = segments[i]
+      if (s.length > 5 && !SKIP.test(s) && !/^\d+$/.test(s)) {
+        // Strip trailing numeric ID that some sites append to slugs (e.g. "akrapovic-exhaust-12345")
+        return toTitle(s.replace(/-\d{4,}$/, ''))
+      }
+    }
+
+    return ''
+  } catch {
+    return ''
+  }
+}
+
+/** Strip boilerplate site-name suffixes from a fetched page <title>. */
+function cleanTitle(raw: string): string {
+  return raw
+    .replace(/^amazon\.com\s*:\s*/i, '')
+    .replace(/,?\s*(automotive|powersports|sports & outdoors|electronics|tools & home improvement|clothing|shoes & jewelry).*$/i, '')
+    .replace(/\s*\|\s*.+$/, '')
+    .replace(/\s*[-–—]\s*(amazon|ebay|revzilla|walmart|target|fortnine|partzilla|rocky mountain atv).*$/i, '')
+    .trim()
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,7 +130,12 @@ export default function ProductSheet({
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
   const [urlStep, setUrlStep] = useState<'search' | 'confirm'>('search')
-  const [urlInfo, setUrlInfo] = useState<{ title: string; source: 'amazon' | 'web'; domain: string } | null>(null)
+  const [urlInfo, setUrlInfo] = useState<{ source: 'amazon' | 'web'; domain: string } | null>(null)
+  const [fetchingTitle, setFetchingTitle] = useState(false)
+
+  // Ref: true when user has manually typed in the title field — prevents auto-fetch from overwriting
+  const userEditedTitleRef = useRef(false)
+  const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function reset() {
     setSearchQuery('')
@@ -91,19 +144,63 @@ export default function ProductSheet({
     setCategory('')
     setUrlStep('search')
     setUrlInfo(null)
+    setFetchingTitle(false)
+    userEditedTitleRef.current = false
+    if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
+  }
+
+  async function fetchTitleFromUrl(url: string) {
+    setFetchingTitle(true)
+    try {
+      const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`)
+      const data = await res.json()
+      if (data.status === 'success' && data.data?.title) {
+        const fetched = cleanTitle(data.data.title)
+        if (fetched && !userEditedTitleRef.current) {
+          setTitle(fetched)
+        }
+      }
+    } catch {
+      // silently fail — user can type title manually
+    } finally {
+      setFetchingTitle(false)
+    }
   }
 
   function handleUrlChange(text: string) {
     setPastedUrl(text)
-    if (text.length > 10 && (text.includes('amazon.') || text.includes('http'))) {
+    // Reset manual-edit flag whenever the URL changes
+    userEditedTitleRef.current = false
+
+    const looksLikeUrl = text.length > 10 && (
+      text.includes('http') || text.includes('www.') || /\.[a-z]{2,}\//.test(text)
+    )
+
+    if (looksLikeUrl) {
       const info = parseUrl(text)
       setUrlInfo(info)
-      if (info.title && !title) setTitle(info.title)
       if (info.domain) setUrlStep('confirm')
+
+      // ① Instant title from URL slug — zero network, works immediately
+      const slugTitle = extractTitleFromUrl(text)
+      if (slugTitle) setTitle(slugTitle)
+
+      // ② Microlink fetch as secondary enhancement (debounced 800ms)
+      //    Overwrites slug title only if user hasn't manually edited yet
+      if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
+      fetchTimerRef.current = setTimeout(() => fetchTitleFromUrl(text), 800)
     } else {
       setUrlInfo(null)
       setUrlStep('search')
+      setTitle('')
+      setFetchingTitle(false)
+      if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
     }
+  }
+
+  function handleTitleChange(text: string) {
+    setTitle(text)
+    userEditedTitleRef.current = true
   }
 
   function handleOpenAmazon() {
@@ -238,23 +335,26 @@ export default function ProductSheet({
 
                 {urlStep === 'confirm' && (
                   <View style={sh.section}>
-                    <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
+                    <View style={sh.sectionLabelRow}>
+                      <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
+                      {fetchingTitle && (
+                        <View style={sh.fetchingBadge}>
+                          <ActivityIndicator size="small" color={colors.textTertiary} style={{ transform: [{ scale: 0.65 }] }} />
+                          <Text style={sh.fetchingBadgeText}>fetching…</Text>
+                        </View>
+                      )}
+                    </View>
                     <TextInput
                       style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-                      placeholder="Enter or edit product name"
+                      placeholder={fetchingTitle ? 'Fetching title…' : 'Enter or edit product name'}
                       placeholderTextColor={colors.textTertiary}
                       value={title}
-                      onChangeText={setTitle}
+                      onChangeText={handleTitleChange}
                       autoCapitalize="words"
                     />
                   </View>
                 )}
 
-                <View style={sh.affiliateNote}>
-                  <Text style={sh.affiliateNoteText}>
-                    🔗 A unique tracking link is generated per tag. Throttlist earns a commission when followers purchase — revenue is shared monthly with contributing members.
-                  </Text>
-                </View>
               </>
             )}
 
@@ -396,6 +496,22 @@ export const sh = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 8,
   },
+  sectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  fetchingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  fetchingBadgeText: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '500',
+  },
   row: { flexDirection: 'row', gap: 8 },
   input: {
     flex: 1,
@@ -439,16 +555,6 @@ export const sh = StyleSheet.create({
     borderColor: colors.accent + '55',
   },
   affiliatePillText: { color: colors.accent, fontSize: 10, fontWeight: '600' },
-  affiliateNote: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    backgroundColor: colors.surface2,
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  affiliateNoteText: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
   manualNote: {
     marginHorizontal: 20,
     marginTop: 10,
