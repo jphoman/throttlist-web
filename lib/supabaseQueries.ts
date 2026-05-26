@@ -80,6 +80,7 @@ function mapPost(row: any): Post {
     linkedProducts: JSON.stringify(row.linked_products ?? []),
     likeCount: row.like_count ?? 0,
     commentCount: row.comment_count ?? 0,
+    isPinned: !!(row.is_pinned),
     createdAt: row.created_at,
     username: row.profiles?.username,
     displayName: row.profiles?.display_name,

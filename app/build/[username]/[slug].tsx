@@ -116,6 +116,16 @@ export default function BuildProfileScreen() {
     }
   }, [data?.build?.id, followedIds])
 
+  // Seed pinnedPostId from DB when build data loads.
+  // Dependency is data?.build?.id (a stable string) — not the posts array —
+  // so this runs once per build navigation, not on every render.
+  useEffect(() => {
+    if (data?.posts) {
+      const pinned = data.posts.find(p => p.isPinned)
+      setPinnedPostId(pinned?.id ?? null)
+    }
+  }, [data?.build?.id])
+
   // Must be before any early returns — Rules of Hooks
   const allTaggedPartIds = useMemo(() => {
     if (!data) return []
@@ -314,11 +324,18 @@ export default function BuildProfileScreen() {
                     style={[styles.postRow, isPinned && styles.postRowPinned]}
                     onPress={() => router.push(`/post/${post.id}`)}
                   >
-                    {thumb ? (
-                      <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
-                    ) : (
-                      <View style={[styles.postThumb, styles.postThumbEmpty]} />
-                    )}
+                    <View style={styles.thumbWrap}>
+                      {thumb ? (
+                        <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.postThumb, styles.postThumbEmpty]} />
+                      )}
+                      {isPinned && (
+                        <View style={styles.pinOverlay}>
+                          <Pin size={9} color="#fff" />
+                        </View>
+                      )}
+                    </View>
                     <View style={styles.postRowInfo}>
                       {isPinned && (
                         <View style={styles.pinnedBadge}>
@@ -553,9 +570,13 @@ export default function BuildProfileScreen() {
             queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
           }}
           onTogglePin={async () => {
-            const next = pinnedPostId !== editingPost.id
-            setPinnedPostId(next ? editingPost.id : null)
-            await updatePost(editingPost.id, { isPinned: next })
+            const becomingPinned = pinnedPostId !== editingPost.id
+            // Unpin the previously pinned post in DB first (only one pin allowed)
+            if (becomingPinned && pinnedPostId && pinnedPostId !== editingPost.id) {
+              await updatePost(pinnedPostId, { isPinned: false })
+            }
+            setPinnedPostId(becomingPinned ? editingPost.id : null)
+            await updatePost(editingPost.id, { isPinned: becomingPinned })
           }}
           onDelete={async () => {
             setDeletedPostIds(prev => [...prev, editingPost.id])
@@ -896,6 +917,24 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
     paddingLeft: 13,
+  },
+  thumbWrap: {
+    position: 'relative',
+  },
+  pinOverlay: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.4,
+    shadowRadius: 2,
   },
   pinnedBadge: {
     flexDirection: 'row',
