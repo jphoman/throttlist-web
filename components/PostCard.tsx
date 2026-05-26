@@ -7,9 +7,9 @@ import {
   Image,
   Dimensions,
   ScrollView,
-  Linking,
   ActivityIndicator,
 } from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import Svg, { Path as SvgPath } from 'react-native-svg'
 import { Heart, MessageCircle, Share2, ExternalLink, X, ProBadge, Tag } from '@/components/Icons'
 import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
@@ -202,7 +202,7 @@ export default function PostCard({
                         style={styles.tagRow}
                         onPress={() => {
                           if (part.type === 'linkable' && part.sourceUrl) {
-                            Linking.openURL(part.sourceUrl)
+                            WebBrowser.openBrowserAsync(part.sourceUrl)
                             onShopPress?.(part)
                           } else {
                             onPartPress?.(part)

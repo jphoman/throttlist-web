@@ -7,11 +7,11 @@ import {
   Pressable,
   Image,
   Platform,
-  Linking,
   Modal,
   FlatList,
   TextInput,
 } from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -636,7 +636,7 @@ function PartRow({ part }: { part: Part }) {
         </View>
       </View>
       {isLinkable && part.sourceUrl ? (
-        <Pressable onPress={() => part.sourceUrl && Linking.openURL(part.sourceUrl)}>
+        <Pressable onPress={() => part.sourceUrl && WebBrowser.openBrowserAsync(part.sourceUrl)}>
           <ExternalLink size={14} color={colors.accent} />
         </Pressable>
       ) : null}

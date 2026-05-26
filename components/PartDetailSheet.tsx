@@ -6,9 +6,9 @@ import {
   Pressable,
   Modal,
   ScrollView,
-  Linking,
   Platform,
 } from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { X, ExternalLink, ShoppingCart, Wrench, Palette } from '@/components/Icons'
 import { colors, buildAffiliateUrl } from '@/constants/throttlist'
 import type { Part } from '@/types'
@@ -44,7 +44,7 @@ export default function PartDetailSheet({
   function openShopLink() {
     if (!part?.sourceUrl) return
     const url = buildAffiliateUrl(part.sourceUrl)
-    Linking.openURL(url)
+    WebBrowser.openBrowserAsync(url)
     setShowDisclosure(false)
   }
 

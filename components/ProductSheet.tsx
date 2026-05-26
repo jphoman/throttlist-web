@@ -17,6 +17,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
+import * as WebBrowser from 'expo-web-browser'
 import { X, ExternalLink, Tag } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import type { LinkedProduct } from '@/types'
@@ -205,7 +206,7 @@ export default function ProductSheet({
 
   function handleOpenAmazon() {
     const q = encodeURIComponent(searchQuery || 'parts accessories')
-    Linking.openURL(`https://www.amazon.com/s?k=${q}&tag=${AMAZON_TAG}`)
+    WebBrowser.openBrowserAsync(`https://www.amazon.com/s?k=${q}&tag=${AMAZON_TAG}`)
   }
 
   function handleConfirm() {

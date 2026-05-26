@@ -8,8 +8,8 @@ import {
   Image,
   Dimensions,
   Platform,
-  Linking,
 } from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Svg, { Path as SvgPath } from 'react-native-svg'
@@ -306,7 +306,7 @@ export default function PostDetailScreen() {
                   ) : null}
                 </View>
                 {part.type === 'linkable' && part.sourceUrl ? (
-                  <Pressable onPress={() => Linking.openURL(part.sourceUrl!)}>
+                  <Pressable onPress={() => WebBrowser.openBrowserAsync(part.sourceUrl!)}>
                     <ExternalLink size={14} color={colors.accent} />
                   </Pressable>
                 ) : null}
@@ -335,7 +335,7 @@ export default function PostDetailScreen() {
                   style={styles.tagsSheetRow}
                   onPress={() => {
                     if (part.type === 'linkable' && part.sourceUrl) {
-                      Linking.openURL(part.sourceUrl)
+                      WebBrowser.openBrowserAsync(part.sourceUrl)
                     }
                     setTagsSheetOpen(false)
                   }}
