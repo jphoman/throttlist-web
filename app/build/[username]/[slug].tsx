@@ -48,7 +48,7 @@ import InitialsAvatar from '@/components/InitialsAvatar'
 import BuildEditSheet from '@/components/BuildEditSheet'
 import PostEditSheet from '@/components/PostEditSheet'
 import { X } from '@/components/Icons'
-import type { Build, Part, Post, Comment, User } from '@/types'
+import type { Build, Part, Post, Comment, User, LinkedProduct } from '@/types'
 
 type BuildTab = 'posts' | 'tags' | 'comments'
 
@@ -127,15 +127,35 @@ export default function BuildProfileScreen() {
     }
   }, [data?.build?.id])
 
-  // Must be before any early returns — Rules of Hooks
-  const allTaggedPartIds = useMemo(() => {
+  // Collect + group all linked products across every post — must be before early returns (Rules of Hooks)
+  const allLinkedProducts = useMemo((): LinkedProduct[] => {
     if (!data) return []
-    const ids = new Set<string>()
+    const seen = new Set<string>()
+    const result: LinkedProduct[] = []
     data.posts.forEach(p => {
-      try { (JSON.parse(p.taggedPartIds) as string[]).forEach(id => ids.add(id)) } catch {}
+      try {
+        const products: LinkedProduct[] = JSON.parse(p.linkedProducts ?? '[]')
+        products.forEach(product => {
+          const key = product.rawUrl || product.title
+          if (key && !seen.has(key)) {
+            seen.add(key)
+            result.push(product)
+          }
+        })
+      } catch {}
     })
-    return Array.from(ids)
+    return result
   }, [data])
+
+  const productsByCategory = useMemo(() => {
+    const map: Record<string, LinkedProduct[]> = {}
+    allLinkedProducts.forEach(p => {
+      const cat = p.category || 'Other'
+      if (!map[cat]) map[cat] = []
+      map[cat].push(p)
+    })
+    return map
+  }, [allLinkedProducts])
 
   if (isLoading) {
     return (
@@ -201,22 +221,11 @@ export default function BuildProfileScreen() {
 
   const tags = effectiveTags
 
-  // Only show parts that are actually tagged in at least one post
-  const taggedCatalogParts = parts.filter(p => allTaggedPartIds.includes(p.id))
-  const paintParts = taggedCatalogParts.filter(p => p.category?.toLowerCase() === 'paint')
-  const otherParts = taggedCatalogParts.filter(p => p.category?.toLowerCase() !== 'paint')
-  const byCategory: Record<string, Part[]> = {}
-  otherParts.forEach(p => {
-    const cat = p.category || 'Other'
-    if (!byCategory[cat]) byCategory[cat] = []
-    byCategory[cat].push(p)
-  })
-
   const buildMeta = [build.year || null, build.make, build.model].filter(Boolean).join(' ')
 
   const TABS: { key: BuildTab; label: string; count: number }[] = [
     { key: 'posts', label: 'Posts', count: posts.length },
-    { key: 'tags', label: 'Tags', count: allTaggedPartIds.length },
+    { key: 'tags', label: 'Tags', count: allLinkedProducts.length },
     { key: 'comments', label: 'Comments', count: allComments.length },
   ]
 
@@ -366,26 +375,19 @@ export default function BuildProfileScreen() {
           )}
 
           {activeTab === 'tags' && (
-            taggedCatalogParts.length === 0 ? (
-              <Text style={styles.emptyText}>No mods logged yet</Text>
+            allLinkedProducts.length === 0 ? (
+              <Text style={styles.emptyText}>No products tagged yet</Text>
             ) : (
               <>
-                {paintParts.length > 0 && (
-                  <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                      <Palette size={15} color={colors.accent} />
-                      <Text style={styles.sectionTitle}>Paint</Text>
-                    </View>
-                    {paintParts.map(part => <PartRow key={part.id} part={part} />)}
-                  </View>
-                )}
-                {Object.entries(byCategory).map(([category, catParts]) => (
+                {Object.entries(productsByCategory).map(([category, products]) => (
                   <View key={category} style={styles.section}>
                     <View style={styles.sectionHeader}>
-                      <Wrench size={15} color={colors.textTertiary} />
+                      <ShoppingCart size={15} color={colors.textTertiary} />
                       <Text style={styles.sectionTitle}>{category}</Text>
                     </View>
-                    {catParts.map(part => <PartRow key={part.id} part={part} />)}
+                    {products.map(product => (
+                      <LinkedProductRow key={product.id} product={product} />
+                    ))}
                   </View>
                 ))}
               </>
@@ -611,6 +613,42 @@ export default function BuildProfileScreen() {
   )
 }
 
+function LinkedProductRow({ product }: { product: LinkedProduct }) {
+  const hasLink = !!product.trackingUrl
+  return (
+    <Pressable
+      style={partStyles.row}
+      onPress={() => hasLink ? WebBrowser.openBrowserAsync(product.trackingUrl) : undefined}
+      disabled={!hasLink}
+    >
+      <View style={partStyles.left}>
+        <View style={[
+          partStyles.sourceBadge,
+          product.source === 'amazon' && partStyles.sourceBadgeAmazon,
+          product.source === 'manual' && partStyles.sourceBadgeManual,
+        ]}>
+          <Text style={[
+            partStyles.sourceBadgeText,
+            product.source === 'amazon' && partStyles.sourceBadgeTextAmazon,
+            product.source === 'manual' && partStyles.sourceBadgeTextManual,
+          ]}>
+            {product.source === 'amazon' ? 'AMZ' : product.source === 'manual' ? 'MAN' : 'WEB'}
+          </Text>
+        </View>
+        <View style={partStyles.info}>
+          <Text style={[partStyles.name, hasLink && { color: colors.accent }]} numberOfLines={2}>
+            {product.title}
+          </Text>
+          {product.brand ? (
+            <Text style={partStyles.notes} numberOfLines={1}>{product.brand}</Text>
+          ) : null}
+        </View>
+      </View>
+      {hasLink && <ExternalLink size={14} color={colors.accent} />}
+    </Pressable>
+  )
+}
+
 function PartRow({ part }: { part: Part }) {
   const isLinkable = part.type === 'linkable'
   const isService = part.type === 'service'
@@ -675,6 +713,19 @@ const partStyles = StyleSheet.create({
     marginTop: 3,
     lineHeight: 17,
   },
+  sourceBadge: {
+    backgroundColor: colors.surface3,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    flexShrink: 0,
+    marginTop: 2,
+  },
+  sourceBadgeAmazon: { backgroundColor: '#FF990022', borderWidth: 1, borderColor: '#FF990055' },
+  sourceBadgeManual: { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent + '55' },
+  sourceBadgeText: { color: colors.textTertiary, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  sourceBadgeTextAmazon: { color: '#FF9900' },
+  sourceBadgeTextManual: { color: colors.accent },
 })
 
 const styles = StyleSheet.create({
