@@ -83,6 +83,13 @@ export default function BuildProfileScreen() {
   const [buildEditOpen, setBuildEditOpen] = useState(false)
   const [editingPost, setEditingPost] = useState<Post | null>(null)
   const [pinnedPostId, setPinnedPostId] = useState<string | null>(null)
+  // Seed pinned post from DB once data loads (runs once per data load)
+  useEffect(() => {
+    if (data?.posts) {
+      const pinned = data.posts.find(p => p.isPinned)
+      setPinnedPostId(pinned?.id ?? null)
+    }
+  }, [data?.posts])
   const [localBuildOverrides, setLocalBuildOverrides] = useState<{ nickname?: string; tags?: string[]; isPrivate?: boolean } | null>(null)
   const [followersSheetOpen, setFollowersSheetOpen] = useState(false)
   const [localPostEdits, setLocalPostEdits] = useState<Record<string, { caption?: string; taggedPartIds?: string[] }>>({})
@@ -314,11 +321,19 @@ export default function BuildProfileScreen() {
                     style={[styles.postRow, isPinned && styles.postRowPinned]}
                     onPress={() => router.push(`/post/${post.id}`)}
                   >
-                    {thumb ? (
-                      <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
-                    ) : (
-                      <View style={[styles.postThumb, styles.postThumbEmpty]} />
-                    )}
+                    {/* Thumbnail with pin overlay on top-left corner */}
+                    <View style={{ position: 'relative' }}>
+                      {thumb ? (
+                        <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.postThumb, styles.postThumbEmpty]} />
+                      )}
+                      {isPinned && (
+                        <View style={styles.pinOverlay}>
+                          <Pin size={9} color="#fff" />
+                        </View>
+                      )}
+                    </View>
                     <View style={styles.postRowInfo}>
                       {isPinned && (
                         <View style={styles.pinnedBadge}>
@@ -553,9 +568,13 @@ export default function BuildProfileScreen() {
             queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
           }}
           onTogglePin={async () => {
-            const next = pinnedPostId !== editingPost.id
-            setPinnedPostId(next ? editingPost.id : null)
-            await updatePost(editingPost.id, { isPinned: next })
+            const becomingPinned = pinnedPostId !== editingPost.id
+            // Unpin previous post in DB before pinning the new one
+            if (becomingPinned && pinnedPostId && pinnedPostId !== editingPost.id) {
+              await updatePost(pinnedPostId, { isPinned: false })
+            }
+            setPinnedPostId(becomingPinned ? editingPost.id : null)
+            await updatePost(editingPost.id, { isPinned: becomingPinned })
           }}
           onDelete={async () => {
             setDeletedPostIds(prev => [...prev, editingPost.id])
@@ -896,6 +915,21 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
     paddingLeft: 13,
+  },
+  pinOverlay: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.4,
+    shadowRadius: 2,
   },
   pinnedBadge: {
     flexDirection: 'row',
