@@ -406,22 +406,23 @@ const sh = StyleSheet.create({
   proBanner: {
     marginHorizontal: 20,
     marginTop: 10,
-    backgroundColor: colors.accent + '15',
+    backgroundColor: '#3A0000',
     borderWidth: 1,
-    borderColor: colors.accent + '40',
+    borderColor: colors.accent,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
   proBannerText: {
-    color: colors.textSecondary,
+    color: '#FFCCCC',
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
   },
   proBannerLink: {
-    color: colors.accent,
+    color: '#FF6666',
     fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   modeTabs: {
     flexDirection: 'row',
