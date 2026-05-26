@@ -242,7 +242,8 @@ export async function createPost(post: {
     .insert(post)
     .select()
     .single()
-  if (error || !data) return null
+  if (error) throw new Error(error.message)
+  if (!data) return null
   return mapPost(data)
 }
 
