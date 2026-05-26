@@ -29,7 +29,6 @@ RETURNS TABLE (
   like_count            int,
   comment_count         int,
   view_count            int,
-  is_pinned             boolean,
   created_at            timestamptz,
   username              text,
   display_name          text,
@@ -168,7 +167,7 @@ scored AS (
     p.photos, p.caption, p.tagged_part_ids, p.linked_products,
     p.like_count, p.comment_count,
     COALESCE(p.view_count, 0) AS view_count,
-    p.is_pinned, p.created_at,
+    p.created_at,
 
     pr.username, pr.display_name, pr.avatar_url, pr.is_pro,
 
@@ -219,7 +218,7 @@ SELECT
   id, user_id, build_id,
   photos, caption, tagged_part_ids, linked_products,
   like_count, comment_count, view_count,
-  is_pinned, created_at,
+  created_at,
   username, display_name, avatar_url, is_pro,
   build_nickname, build_slug, build_year, build_make, build_model,
   build_type, build_cover_photo_url,

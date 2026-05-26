@@ -267,7 +267,7 @@ export async function fetchForYouFeed(userId: string, limit = 40): Promise<Post[
     linkedProducts:   JSON.stringify(row.linked_products ?? []),
     likeCount:        row.like_count ?? 0,
     commentCount:     row.comment_count ?? 0,
-    isPinned:         !!(row.is_pinned),
+    isPinned:         false,   // column not present in live posts table
     createdAt:        row.created_at,
     username:         row.username,
     displayName:      row.display_name,
