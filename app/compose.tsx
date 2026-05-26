@@ -65,6 +65,7 @@ function parseUrl(rawUrl: string): { title: string; source: 'amazon' | 'web'; do
 interface ProductSheetProps {
   visible: boolean
   userId: string
+  isPro: boolean
   partCategories: string[]
   onConfirm: (product: Omit<LinkedProduct, 'x' | 'y'>) => void
   onClose: () => void
@@ -72,7 +73,7 @@ interface ProductSheetProps {
 
 type SheetMode = 'link' | 'manual'
 
-function ProductSheet({ visible, userId, partCategories, onConfirm, onClose }: ProductSheetProps) {
+function ProductSheet({ visible, userId, isPro, partCategories, onConfirm, onClose }: ProductSheetProps) {
   const [mode, setMode] = useState<SheetMode>('link')
   const [searchQuery, setSearchQuery] = useState('')
   const [pastedUrl, setPastedUrl] = useState('')
@@ -168,6 +169,19 @@ function ProductSheet({ visible, userId, partCategories, onConfirm, onClose }: P
               <Text style={[sh.modeTabText, mode === 'manual' && sh.modeTabTextActive]}>Manual Tag</Text>
             </Pressable>
           </View>
+
+          {/* Pro upsell banner */}
+          {!isPro && (
+            <Pressable
+              style={sh.proBanner}
+              onPress={() => { handleClose(); router.push('/pro-signup') }}
+            >
+              <Text style={sh.proBannerText}>
+                Pro users can earn commission on tags —{' '}
+                <Text style={sh.proBannerLink}>sign up now</Text>
+              </Text>
+            </Pressable>
+          )}
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
@@ -389,6 +403,26 @@ const sh = StyleSheet.create({
     borderColor: colors.border,
   },
   affiliateNoteText: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
+  proBanner: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    backgroundColor: colors.accent + '15',
+    borderWidth: 1,
+    borderColor: colors.accent + '40',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  proBannerText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  proBannerLink: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
   modeTabs: {
     flexDirection: 'row',
     marginHorizontal: 20,
@@ -486,6 +520,7 @@ export default function ComposeScreen() {
   const selectedBuild = myBuilds.find(b => b.id === selectedBuildId)
   const buildCategoryDef = BUILD_CATEGORIES.find(c => c.id === selectedBuild?.buildType)
   const partCategories = buildCategoryDef?.partCategories ?? []
+  const isPro = myBuilds.some(b => b.ownerIsPro)
 
   async function uploadPhoto(uri: string): Promise<string | null> {
     try {
@@ -770,6 +805,7 @@ export default function ComposeScreen() {
       <ProductSheet
         visible={productSheetOpen}
         userId={userId}
+        isPro={isPro}
         partCategories={partCategories}
         onConfirm={handleProductConfirm}
         onClose={() => { setProductSheetOpen(false); setPendingPin(null) }}
