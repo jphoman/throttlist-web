@@ -313,25 +313,35 @@ export default function CaptureScreen() {
 
       {/* Gallery — bottom left */}
       {Platform.OS === 'web' ? (
-        // On web, overlay a real <input type="file"> so mobile browsers allow the tap.
-        // Programmatic input.click() is blocked on mobile; the input must be the tap target.
-        <View style={styles.galleryBtn}>
-          <Gallery size={28} color="#fff" />
-          {/* @ts-ignore – <input> is valid in React Native Web */}
+        // On web, use a hidden <input> + <label htmlFor> — the canonical pattern for
+        // custom file-upload buttons. Works on mobile Safari where programmatic
+        // input.click() is blocked by the browser's security sandbox.
+        <>
+          {/* @ts-ignore – raw HTML elements are valid in React Native Web */}
           <input
+            id="gallery-file-input"
             type="file"
             accept="image/*"
             onChange={handleWebFileChange}
+            style={{ display: 'none' }}
+          />
+          {/* @ts-ignore */}
+          <label
+            htmlFor="gallery-file-input"
             style={{
               position: 'absolute',
-              inset: 0,
-              opacity: 0,
+              bottom: 36,
+              left: 32,
+              padding: 8,
               cursor: 'pointer',
-              width: '100%',
-              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
-          />
-        </View>
+          >
+            <Gallery size={28} color="#fff" />
+          </label>
+        </>
       ) : (
         <Pressable style={styles.galleryBtn} onPress={handlePickFromGallery}>
           <Gallery size={28} color="#fff" />
