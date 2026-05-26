@@ -71,7 +71,6 @@ export interface Post {
   linkedProducts: string // JSON array of LinkedProduct
   likeCount: number
   commentCount: number
-  isPinned: boolean
   createdAt: string
   // joined
   username?: string
