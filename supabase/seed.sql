@@ -84,6 +84,39 @@ BEGIN
      '{"provider":"email","providers":["email"]}')
   ON CONFLICT (id) DO NOTHING;
 
+  -- ── 1b. Auth identities (required by GoTrue for sign-in to succeed) ────────
+  -- Direct inserts into auth.users don't auto-populate auth.identities.
+  -- Without these rows every seed login returns 500 "Database error querying schema".
+  INSERT INTO auth.identities
+    (id, provider_id, user_id, identity_data, provider,
+     last_sign_in_at, created_at, updated_at)
+  VALUES
+    (gen_random_uuid(), 'cappuccinomoto@throttlist.app',  uid_cap,
+     jsonb_build_object('sub', uid_cap::text,    'email', 'cappuccinomoto@throttlist.app',  'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'investomoto@throttlist.app',     uid_invest,
+     jsonb_build_object('sub', uid_invest::text, 'email', 'investomoto@throttlist.app',     'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'motofeel@throttlist.app',        uid_feelz,
+     jsonb_build_object('sub', uid_feelz::text,  'email', 'motofeel@throttlist.app',        'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'retroscrambler@throttlist.app',  uid_retro,
+     jsonb_build_object('sub', uid_retro::text,  'email', 'retroscrambler@throttlist.app',  'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'seven11moto@throttlist.app',     uid_s11,
+     jsonb_build_object('sub', uid_s11::text,    'email', 'seven11moto@throttlist.app',     'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'thecrocodile@throttlist.app',    uid_croc,
+     jsonb_build_object('sub', uid_croc::text,   'email', 'thecrocodile@throttlist.app',    'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'motozuc@throttlist.app',         uid_mzuc,
+     jsonb_build_object('sub', uid_mzuc::text,   'email', 'motozuc@throttlist.app',         'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now()),
+    (gen_random_uuid(), 'coldbrewmoto@throttlist.app',    uid_cold,
+     jsonb_build_object('sub', uid_cold::text,   'email', 'coldbrewmoto@throttlist.app',    'email_verified', true, 'phone_verified', false),
+     'email', now(), now(), now())
+  ON CONFLICT (provider, provider_id) DO NOTHING;
+
   -- ── 2. Profiles (trigger may have created rows; upsert fills extra fields) ──
   INSERT INTO public.profiles (
     id, username, display_name, bio, location,
