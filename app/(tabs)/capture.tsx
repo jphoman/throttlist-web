@@ -368,16 +368,19 @@ export default function CaptureScreen() {
                 style={styles.buildItem}
                 onPress={() => setSelectedBuildId(build.id)}
               >
-                {build.coverPhotoUrl ? (
-                  <Image
-                    source={{ uri: build.coverPhotoUrl }}
-                    style={[styles.buildThumb, isSelected && styles.buildThumbSelected]}
-                  />
-                ) : (
-                  <View style={[styles.buildThumb, styles.buildThumbFallback, isSelected && styles.buildThumbSelected]}>
-                    <InitialsAvatar name={build.nickname || build.model} size={40} />
-                  </View>
-                )}
+                {/* Ring (border) is on the outer View — no opacity so the border stays crisp */}
+                <View style={[styles.buildRing, isSelected && styles.buildRingSelected]}>
+                  {build.coverPhotoUrl ? (
+                    <Image
+                      source={{ uri: build.coverPhotoUrl }}
+                      style={[styles.buildThumbImg, !isSelected && styles.buildThumbDimmed]}
+                    />
+                  ) : (
+                    <View style={[styles.buildThumbFallback, !isSelected && styles.buildThumbDimmed]}>
+                      <InitialsAvatar name={build.nickname || build.model} size={38} />
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.buildName, isSelected && styles.buildNameSelected]} numberOfLines={1}>
                   {build.nickname || build.model}
                 </Text>
@@ -389,7 +392,7 @@ export default function CaptureScreen() {
             style={styles.buildItem}
             onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
           >
-            <View style={[styles.buildThumb, styles.buildThumbAdd]}>
+            <View style={styles.buildThumbAdd}>
               <Plus size={20} color={colors.textTertiary} />
             </View>
             <Text style={styles.buildName} numberOfLines={1}>Add</Text>
@@ -438,27 +441,40 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
     right: 16,
-    maxHeight: 200,
+    maxHeight: 300,
     width: 68,
   },
   buildScroll: { width: 68 },
   buildList: { gap: 10, alignItems: 'flex-end', paddingBottom: 4 },
   buildItem: { alignItems: 'center', gap: 3 },
-  buildThumb: {
+  // Outer ring — holds border, no opacity so the outline stays crisp
+  buildRing: {
     width: 46, height: 46, borderRadius: 23,
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
-    opacity: 0.6,
+    overflow: 'hidden',
   },
-  buildThumbFallback: { backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
+  buildRingSelected: {
+    borderColor: colors.accent,
+  },
+  // Inner image fills the ring
+  buildThumbImg: {
+    width: '100%', height: '100%',
+  },
+  // Dimmed state applied only to the inner content, not the border
+  buildThumbDimmed: { opacity: 0.5 },
+  buildThumbFallback: {
+    width: '100%', height: '100%',
+    backgroundColor: colors.surface2,
+    alignItems: 'center', justifyContent: 'center',
+  },
   buildThumbAdd: {
+    width: 46, height: 46, borderRadius: 23,
     backgroundColor: 'rgba(255,255,255,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 1,
   },
-  buildThumbSelected: { borderColor: colors.accent, opacity: 1 },
   buildName: { color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: '600', textAlign: 'center', width: 58 },
   buildNameSelected: { color: '#fff' },
   iconBtnActive: {
