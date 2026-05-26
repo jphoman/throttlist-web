@@ -446,8 +446,8 @@ const styles = StyleSheet.create({
   buildItem: { alignItems: 'center', gap: 3 },
   buildThumb: {
     width: 46, height: 46, borderRadius: 23,
-    borderWidth: 2, borderColor: 'transparent',
-    opacity: 0.45,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
+    opacity: 0.6,
   },
   buildThumbFallback: { backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
   buildThumbAdd: {
