@@ -272,7 +272,10 @@ export default function BuildProfileScreen() {
             )}
           </View>
 
-          <Pressable style={styles.userRow} onPress={() => router.push(`/user/${user.username}`)}>
+          <Pressable
+            style={styles.userRow}
+            onPress={() => router.push(`/user/${user.username}`)}
+          >
             <InitialsAvatar name={user.displayName} photoUrl={user.avatarUrl} size={26} />
             <Text style={styles.handle}>@{user.username}</Text>
             {isPro && <ProBadge size={12} />}
@@ -826,10 +829,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 10,
+    alignSelf: 'flex-start',
   },
   handle: {
-    color: colors.textSecondary,
+    color: colors.textPrimary,
     fontSize: 13,
+    fontWeight: '600',
   },
   statsRow: {
     flexDirection: 'row',

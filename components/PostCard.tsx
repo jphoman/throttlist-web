@@ -98,22 +98,32 @@ export default function PostCard({
 
           <View style={styles.topScrim} pointerEvents="none" />
 
-          <Pressable style={styles.overlayHeader} onPress={onBuildPress}>
-            <InitialsAvatar
-              name={post.displayName || post.username || post.buildMake}
-              photoUrl={post.avatarUrl || null}
-              size={34}
-            />
+          <View style={styles.overlayHeader}>
+            <Pressable
+              onPress={() => post.username && router.push(`/user/${post.username}`)}
+              style={styles.overlayAvatarBtn}
+            >
+              <InitialsAvatar
+                name={post.displayName || post.username || post.buildMake}
+                photoUrl={post.avatarUrl || null}
+                size={34}
+              />
+            </Pressable>
             <View>
-              <View style={styles.usernameRow}>
+              <Pressable
+                style={styles.usernameRow}
+                onPress={() => post.username && router.push(`/user/${post.username}`)}
+              >
                 <Text style={styles.overlayHandle}>@{post.username}</Text>
                 {post.isPro && <ProBadge size={12} />}
-              </View>
-              <Text style={styles.overlayBuild} numberOfLines={1}>
-                {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
-              </Text>
+              </Pressable>
+              <Pressable onPress={onBuildPress}>
+                <Text style={styles.overlayBuild} numberOfLines={1}>
+                  {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
+                </Text>
+              </Pressable>
             </View>
-          </Pressable>
+          </View>
 
           {tagCount > 0 && (
             <Pressable style={styles.partsBadge} onPress={() => setTagsOpen(v => !v)}>
@@ -215,13 +225,15 @@ export default function PostCard({
           )}
         </View>
       ) : (
-        <Pressable style={styles.header} onPress={onBuildPress}>
-          <InitialsAvatar
-            name={post.displayName || post.username || post.buildMake}
-            photoUrl={post.avatarUrl || null}
-            size={38}
-          />
-          <View style={styles.headerInfo}>
+        <View style={styles.header}>
+          <Pressable onPress={() => post.username && router.push(`/user/${post.username}`)}>
+            <InitialsAvatar
+              name={post.displayName || post.username || post.buildMake}
+              photoUrl={post.avatarUrl || null}
+              size={38}
+            />
+          </Pressable>
+          <Pressable style={styles.headerInfo} onPress={onBuildPress}>
             <View style={styles.usernameRow}>
               <Text style={styles.handle}>@{post.username}</Text>
               {post.isPro && <ProBadge size={12} />}
@@ -229,16 +241,21 @@ export default function PostCard({
             <Text style={styles.buildName} numberOfLines={1}>
               {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
             </Text>
-          </View>
+          </Pressable>
           <Text style={styles.timestamp}>{timeAgo(post.createdAt)}</Text>
-        </Pressable>
+        </View>
       )}
 
       {/* Caption + comments + timestamp */}
       <View style={styles.postMeta}>
         {!!post.caption && (
           <Text style={styles.captionLine}>
-            <Text style={styles.metaUsername}>{post.username} </Text>
+            <Text
+              style={styles.metaUsername}
+              onPress={() => post.username && router.push(`/user/${post.username}`)}
+            >
+              {post.username}{' '}
+            </Text>
             {post.caption}
           </Text>
         )}
@@ -290,6 +307,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
+  },
+  overlayAvatarBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   overlayHandle: {
     color: '#FFFFFF',
