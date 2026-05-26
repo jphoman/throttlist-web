@@ -42,6 +42,7 @@ import {
 } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
+import { BUILD_CATEGORIES } from '@/constants/buildTypes'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import BuildEditSheet from '@/components/BuildEditSheet'
 import PostEditSheet from '@/components/PostEditSheet'
@@ -531,8 +532,9 @@ export default function BuildProfileScreen() {
         <PostEditSheet
           visible={!!editingPost}
           post={editingPost}
-          parts={parts}
-          suggestedPartIds={allTaggedPartIds}
+          userId={authUser?.id ?? ''}
+          isPro={isPro}
+          partCategories={BUILD_CATEGORIES.find(c => c.id === build.buildType)?.partCategories ?? []}
           isPinned={pinnedPostId === editingPost.id}
           onClose={() => setEditingPost(null)}
           onSave={async (updates) => {
@@ -541,13 +543,12 @@ export default function BuildProfileScreen() {
               [editingPost.id]: {
                 ...(prev[editingPost.id] ?? {}),
                 caption: updates.caption,
-                taggedPartIds: JSON.stringify(updates.taggedPartIds),
               },
             }))
             setEditingPost(null)
             await updatePost(editingPost.id, {
               caption: updates.caption,
-              taggedPartIds: updates.taggedPartIds,
+              linked_products: updates.linkedProducts,
             })
             queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
           }}

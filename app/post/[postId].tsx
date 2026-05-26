@@ -17,6 +17,7 @@ import { ArrowLeft, Heart, MessageCircle, Share2, ExternalLink, MoreHorizontal, 
 import { fetchPost, fetchBuildParts, fetchComments, toggleLike, updatePost, deletePost } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
+import { BUILD_CATEGORIES } from '@/constants/buildTypes'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import CommentSheet from '@/components/CommentSheet'
 import PostEditSheet from '@/components/PostEditSheet'
@@ -34,7 +35,6 @@ export default function PostDetailScreen() {
   const [editSheetOpen, setEditSheetOpen] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
   const [localCaption, setLocalCaption] = useState<string | null>(null)
-  const [localTaggedIds, setLocalTaggedIds] = useState<string[] | null>(null)
   const [deleted, setDeleted] = useState(false)
   const [tagsSheetOpen, setTagsSheetOpen] = useState(false)
 
@@ -84,7 +84,7 @@ export default function PostDetailScreen() {
   const isOwner = post.userId === authUser?.id
   const displayCaption = localCaption ?? post.caption
   const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
-  const effectiveTaggedIds = localTaggedIds ?? (() => { try { return JSON.parse(post.taggedPartIds) } catch { return [] } })()
+  const effectiveTaggedIds: string[] = (() => { try { return JSON.parse(post.taggedPartIds) } catch { return [] } })()
   const taggedParts = allParts.filter(p => effectiveTaggedIds.includes(p.id))
 
   const topComments = [...fetchedComments]
@@ -376,15 +376,16 @@ export default function PostDetailScreen() {
         <PostEditSheet
           visible={editSheetOpen}
           post={post}
-          parts={allParts}
+          userId={authUser?.id ?? ''}
+          isPro={!!post.isPro}
+          partCategories={BUILD_CATEGORIES.find(c => c.id === post.buildType)?.partCategories ?? []}
           isPinned={isPinned}
           onClose={() => setEditSheetOpen(false)}
           onSave={async (updates) => {
             setLocalCaption(updates.caption)
-            setLocalTaggedIds(updates.taggedPartIds)
             await updatePost(post.id, {
               caption: updates.caption,
-              taggedPartIds: updates.taggedPartIds,
+              linked_products: updates.linkedProducts,
             })
             queryClient.invalidateQueries({ queryKey: ['post', postId] })
           }}
