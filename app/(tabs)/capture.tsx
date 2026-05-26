@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import {
   View,
   Text,
@@ -17,19 +17,6 @@ import { fetchUserBuilds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
 
-// Web-only hidden file input for photo library access
-let webFileInput: HTMLInputElement | null = null
-function getWebFileInput(): HTMLInputElement {
-  if (!webFileInput) {
-    webFileInput = document.createElement('input')
-    webFileInput.type = 'file'
-    webFileInput.accept = 'image/*'
-    webFileInput.multiple = false
-    webFileInput.style.display = 'none'
-    document.body.appendChild(webFileInput)
-  }
-  return webFileInput
-}
 
 export default function CaptureScreen() {
   const { user: authUser } = useAuth()
@@ -104,28 +91,17 @@ export default function CaptureScreen() {
     }
   }
 
+  function handleWebFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const uri = URL.createObjectURL(file)
+    // Reset so the same file can be picked again later
+    e.target.value = ''
+    navigateWithPhoto(uri)
+  }
+
   async function handlePickFromGallery() {
-    if (Platform.OS === 'web') {
-      const input = getWebFileInput()
-      // Remove any previous listener before adding a fresh one
-      const fresh = input.cloneNode() as HTMLInputElement
-      fresh.accept = 'image/*'
-      fresh.multiple = false
-      fresh.style.display = 'none'
-      webFileInput = fresh
-      document.body.appendChild(fresh)
-
-      fresh.onchange = () => {
-        const file = fresh.files?.[0]
-        if (!file) return
-        const uri = URL.createObjectURL(file)
-        navigateWithPhoto(uri)
-      }
-      fresh.click()
-      return
-    }
-
-    // Native (iOS/Android)
+    // Native (iOS/Android) — web uses the inline <input> overlay instead
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -336,9 +312,31 @@ export default function CaptureScreen() {
       )}
 
       {/* Gallery — bottom left */}
-      <Pressable style={styles.galleryBtn} onPress={handlePickFromGallery}>
-        <Gallery size={28} color="#fff" />
-      </Pressable>
+      {Platform.OS === 'web' ? (
+        // On web, overlay a real <input type="file"> so mobile browsers allow the tap.
+        // Programmatic input.click() is blocked on mobile; the input must be the tap target.
+        <View style={styles.galleryBtn}>
+          <Gallery size={28} color="#fff" />
+          {/* @ts-ignore – <input> is valid in React Native Web */}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleWebFileChange}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              opacity: 0,
+              cursor: 'pointer',
+              width: '100%',
+              height: '100%',
+            }}
+          />
+        </View>
+      ) : (
+        <Pressable style={styles.galleryBtn} onPress={handlePickFromGallery}>
+          <Gallery size={28} color="#fff" />
+        </Pressable>
+      )}
 
       {/* Shutter — centered */}
       <Pressable style={styles.shutter} onPress={handleShutter}>
