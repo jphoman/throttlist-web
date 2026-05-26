@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Bell, Compass, ChevronDown, X as XIcon } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFollowedFeed, fetchFollowedBuilds, fetchLikedPostIds } from '@/lib/supabaseQueries'
+import { fetchFollowedFeed, fetchForYouFeed, fetchFollowedBuilds, fetchLikedPostIds, toggleBuildFollow } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
@@ -35,6 +35,9 @@ export default function FeedScreen() {
   const userId = authUser?.id ?? ''
 
   const [refreshing, setRefreshing] = useState(false)
+  // Optimistic local follow state — builds tapped Follow on during this session.
+  // Prevents the Follow button from reappearing before the query refetches.
+  const [locallyFollowed, setLocallyFollowed] = useState<Set<string>>(new Set())
   const [typePickerOpen, setTypePickerOpen] = useState(false)
   const [typeSearch, setTypeSearch] = useState('')
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
@@ -56,7 +59,10 @@ export default function FeedScreen() {
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['feed-posts', sortMode, userId],
-    queryFn: () => fetchFollowedFeed(userId, 40, sortMode === 'most-recent' ? userId : undefined),
+    queryFn: () =>
+      sortMode === 'for-you'
+        ? fetchForYouFeed(userId, 40)
+        : fetchFollowedFeed(userId, 40, userId),   // most-recent excludes own posts
     enabled: !!userId,
   })
 
@@ -79,6 +85,18 @@ export default function FeedScreen() {
     setRefreshing(false)
   }, [queryClient, sortMode, userId])
 
+  /** Optimistically follow a build from a For You card, then persist. */
+  const handleFollowBuild = useCallback(async (buildId: string) => {
+    setLocallyFollowed(prev => new Set([...prev, buildId]))
+    try {
+      await toggleBuildFollow(userId, buildId, false)
+      queryClient.invalidateQueries({ queryKey: ['followed-builds-list', userId] })
+    } catch {
+      // Rollback optimistic update on failure
+      setLocallyFollowed(prev => { const s = new Set(prev); s.delete(buildId); return s })
+    }
+  }, [userId, queryClient])
+
   const filteredBuilds = useMemo(() => {
     const q = buildSearch.toLowerCase()
     return myBuilds.filter(b =>
@@ -96,14 +114,18 @@ export default function FeedScreen() {
   }, [posts])
 
   const displayedPosts = useMemo(() => {
-    let result = [...posts]
+    let result = posts.map(p =>
+      // Merge local follow state so Follow button disappears immediately after tap
+      locallyFollowed.has(p.buildId) ? { ...p, userFollowsBuild: true } : p
+    )
     if (buildFilter) result = result.filter(p => p.buildId === buildFilter)
     if (effectiveTypeFilter) result = result.filter(p => p.buildType === effectiveTypeFilter)
     if (sortMode === 'most-recent') {
       result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }
+    // for-you: server already returned posts ranked by score — preserve order
     return result
-  }, [posts, sortMode, effectiveTypeFilter, buildFilter])
+  }, [posts, sortMode, effectiveTypeFilter, buildFilter, locallyFollowed])
 
   const headerTranslate = scrollY.interpolate({
     inputRange: [0, 70],
@@ -355,6 +377,12 @@ export default function FeedScreen() {
                   router.push(`/build/${item.username}/${item.buildSlug}`)
                 }
               }}
+              onFollowBuild={
+                // Only wire up the follow handler in For You mode
+                sortMode === 'for-you' && item.buildId
+                  ? () => handleFollowBuild(item.buildId)
+                  : undefined
+              }
             />
           )}
           ListEmptyComponent={renderEmptyState()}

@@ -237,6 +237,54 @@ export async function fetchFollowedFeed(userId: string, limit = 20, excludeUserI
   return data.map(mapPost)
 }
 
+/**
+ * Fetch the "For You" feed using the server-side scoring function.
+ *
+ * The Postgres function `get_for_you_feed` ranks posts by a composite score:
+ *   engagement (log-scale) × recency decay
+ *   + social signal (mutual followers in network)
+ *   + content affinity (build-type interaction history)
+ *   + trending spike (recent likes / 24 h)
+ *   × follow boost (1.3× for already-followed builds)
+ *
+ * Each post includes `userFollowsBuild` and `mutualFollowers` so the UI
+ * can show a Follow button and social-proof copy on discovery posts.
+ */
+export async function fetchForYouFeed(userId: string, limit = 40): Promise<Post[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('get_for_you_feed', {
+    p_user_id: userId,
+    p_limit:   limit,
+  })
+  if (error || !data) return []
+  return (data as any[]).map(row => ({
+    id:               row.id,
+    buildId:          row.build_id ?? '',
+    userId:           row.user_id,
+    photos:           JSON.stringify(row.photos ?? []),
+    caption:          row.caption ?? '',
+    taggedPartIds:    JSON.stringify(row.tagged_part_ids ?? []),
+    linkedProducts:   JSON.stringify(row.linked_products ?? []),
+    likeCount:        row.like_count ?? 0,
+    commentCount:     row.comment_count ?? 0,
+    isPinned:         !!(row.is_pinned),
+    createdAt:        row.created_at,
+    username:         row.username,
+    displayName:      row.display_name,
+    avatarUrl:        row.avatar_url ?? '',
+    buildNickname:    row.build_nickname,
+    buildSlug:        row.build_slug,
+    buildYear:        row.build_year,
+    buildMake:        row.build_make,
+    buildModel:       row.build_model,
+    buildCoverPhotoUrl: row.build_cover_photo_url,
+    buildType:        normBuildType(row.build_type),
+    isPro:            !!(row.is_pro),
+    userFollowsBuild: !!(row.user_follows_build),
+    mutualFollowers:  row.mutual_followers ?? 0,
+  }))
+}
+
 export async function fetchUserPosts(userId: string): Promise<Post[]> {
   const { data, error } = await supabase
     .from('posts')

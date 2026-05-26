@@ -33,6 +33,8 @@ interface PostCardProps {
   onComment?: () => void
   onShare?: () => void
   onShopPress?: (part: Part) => void
+  /** Called when the user taps Follow on a discovery card (For You feed only). */
+  onFollowBuild?: () => void
 }
 
 export default function PostCard({
@@ -45,9 +47,16 @@ export default function PostCard({
   onComment,
   onShare,
   onShopPress,
+  onFollowBuild,
 }: PostCardProps) {
   const { user: authUser } = useAuth()
   const [liked, setLiked] = useState(initialLiked)
+  // Show Follow button when the viewer doesn't follow this build and it's not their own post
+  const showFollowBtn = (
+    onFollowBuild != null &&
+    post.userFollowsBuild === false &&
+    post.userId !== authUser?.id
+  )
   const [photoIndex, setPhotoIndex] = useState(0)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [commentSheetOpen, setCommentSheetOpen] = useState(false)
@@ -117,11 +126,23 @@ export default function PostCard({
                 <Text style={styles.overlayHandle}>@{post.username}</Text>
                 {post.isPro && <ProBadge size={12} />}
               </Pressable>
-              <Pressable onPress={onBuildPress}>
-                <Text style={styles.overlayBuild} numberOfLines={1}>
-                  {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
+              <View style={styles.overlayBuildRow}>
+                <Pressable onPress={onBuildPress}>
+                  <Text style={styles.overlayBuild} numberOfLines={1}>
+                    {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
+                  </Text>
+                </Pressable>
+                {showFollowBtn && (
+                  <Pressable style={styles.followPill} onPress={onFollowBuild}>
+                    <Text style={styles.followPillText}>Follow</Text>
+                  </Pressable>
+                )}
+              </View>
+              {!showFollowBtn && (post.mutualFollowers ?? 0) > 0 && post.userFollowsBuild === false && (
+                <Text style={styles.mutualHint}>
+                  {post.mutualFollowers === 1 ? '1 friend follows this' : `${post.mutualFollowers} friends follow this`}
                 </Text>
-              </Pressable>
+              )}
             </View>
           </View>
 
@@ -233,16 +254,24 @@ export default function PostCard({
               size={38}
             />
           </Pressable>
-          <Pressable style={styles.headerInfo} onPress={onBuildPress}>
-            <View style={styles.usernameRow}>
-              <Text style={styles.handle}>@{post.username}</Text>
-              {post.isPro && <ProBadge size={12} />}
-            </View>
-            <Text style={styles.buildName} numberOfLines={1}>
-              {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
-            </Text>
-          </Pressable>
-          <Text style={styles.timestamp}>{timeAgo(post.createdAt)}</Text>
+          <View style={styles.headerInfo}>
+            <Pressable onPress={onBuildPress}>
+              <View style={styles.usernameRow}>
+                <Text style={styles.handle}>@{post.username}</Text>
+                {post.isPro && <ProBadge size={12} />}
+              </View>
+              <Text style={styles.buildName} numberOfLines={1}>
+                {post.buildNickname || `${post.buildYear} ${post.buildMake} ${post.buildModel}`}
+              </Text>
+            </Pressable>
+          </View>
+          {showFollowBtn ? (
+            <Pressable style={styles.followPillDark} onPress={onFollowBuild}>
+              <Text style={styles.followPillText}>Follow</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.timestamp}>{timeAgo(post.createdAt)}</Text>
+          )}
         </View>
       )}
 
@@ -327,7 +356,39 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
-    maxWidth: SCREEN_WIDTH * 0.5,
+    maxWidth: SCREEN_WIDTH * 0.45,
+  },
+  overlayBuildRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  followPill: {
+    backgroundColor: colors.accent,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  followPillDark: {
+    backgroundColor: colors.accent,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginLeft: 'auto',
+  },
+  followPillText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  mutualHint: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   overlayActions: {
     position: 'absolute',

@@ -85,6 +85,10 @@ export interface Post {
   buildCoverPhotoUrl?: string
   buildType?: string
   isPro?: boolean
+  // for-you feed algorithm extras
+  // undefined = unknown (hide button); false = not following (show Follow button)
+  userFollowsBuild?: boolean
+  mutualFollowers?: number
 }
 
 export interface Comment {
