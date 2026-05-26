@@ -11,14 +11,14 @@ import {
 } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import Svg, { Path as SvgPath } from 'react-native-svg'
-import { Heart, MessageCircle, Share2, ExternalLink, X, ProBadge, Tag } from '@/components/Icons'
+import { Heart, MessageCircle, Share2, ExternalLink, X, ProBadge } from '@/components/Icons'
 import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import { router } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import CommentSheet from '@/components/CommentSheet'
-import { fetchBuildParts, toggleLike } from '@/lib/supabaseQueries'
+import { toggleLike } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
-import type { Post, Part } from '@/types'
+import type { Post, Part, LinkedProduct } from '@/types'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const PHOTO_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3))
@@ -51,35 +51,16 @@ export default function PostCard({
   const [photoIndex, setPhotoIndex] = useState(0)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [commentSheetOpen, setCommentSheetOpen] = useState(false)
-  const [fetchedParts, setFetchedParts] = useState<Part[] | null>(null)
-  const [partsLoading, setPartsLoading] = useState(false)
 
   const photos: string[] = (() => {
     try { return JSON.parse(post.photos) } catch { return [] }
   })()
-  const taggedIds: string[] = (() => {
-    try { return JSON.parse(post.taggedPartIds) } catch { return [] }
+
+  // linked_products is the source of truth for product tags created via ProductSheet
+  const linkedProducts: LinkedProduct[] = (() => {
+    try { return JSON.parse(post.linkedProducts) } catch { return [] }
   })()
-
-  // Use pre-passed parts if available, otherwise use lazily fetched ones
-  const resolvedParts = fetchedParts ?? parts
-  const taggedParts = resolvedParts.filter(p => taggedIds.includes(p.id))
-  const tagCount = taggedIds.length
-
-  async function handleTagBadgePress() {
-    if (tagsOpen) { setTagsOpen(false); return }
-    // Fetch parts on first open if not already loaded
-    if (fetchedParts === null && post.buildId) {
-      setPartsLoading(true)
-      try {
-        const loaded = await fetchBuildParts(post.buildId)
-        setFetchedParts(loaded)
-      } finally {
-        setPartsLoading(false)
-      }
-    }
-    setTagsOpen(true)
-  }
+  const tagCount = linkedProducts.length
 
 
   function handleLike() {
@@ -135,7 +116,7 @@ export default function PostCard({
           </Pressable>
 
           {tagCount > 0 && (
-            <Pressable style={styles.partsBadge} onPress={handleTagBadgePress}>
+            <Pressable style={styles.partsBadge} onPress={() => setTagsOpen(v => !v)}>
               <Svg width={48} height={20} viewBox="0 0 48 20">
                 <SvgPath
                   d="M 14 0 L 44 0 Q 48 0 48 4 L 48 16 Q 48 20 44 20 L 14 20 C 9 20 3 13 3 10 C 3 7 9 0 14 0 Z M 13 10 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
@@ -186,54 +167,48 @@ export default function PostCard({
               <Pressable onPress={e => e.stopPropagation()}>
                 <View style={styles.tagsPanel}>
                   <View style={styles.tagsPanelHeader}>
-                    <Text style={styles.tagsPanelTitle}>Tagged Parts</Text>
+                    <Text style={styles.tagsPanelTitle}>Tagged Products</Text>
                     <Pressable onPress={() => setTagsOpen(false)} style={styles.tagsPanelClose}>
                       <X size={16} color={colors.textSecondary} />
                     </Pressable>
                   </View>
-                  {partsLoading ? (
-                    <View style={styles.tagsLoading}>
-                      <ActivityIndicator size="small" color={colors.accent} />
-                    </View>
-                  ) : taggedParts.length > 0 ? (
-                    taggedParts.map(part => (
-                      <Pressable
-                        key={part.id}
-                        style={styles.tagRow}
-                        onPress={() => {
-                          if (part.type === 'linkable' && part.sourceUrl) {
-                            WebBrowser.openBrowserAsync(part.sourceUrl)
-                            onShopPress?.(part)
-                          } else {
-                            onPartPress?.(part)
-                          }
-                          setTagsOpen(false)
-                        }}
-                      >
-                        <View style={[
-                          styles.tagDot,
-                          part.type === 'linkable' && { backgroundColor: colors.accent },
-                          part.type === 'reference' && { backgroundColor: colors.reference },
-                        ]} />
-                        <View style={styles.tagInfo}>
-                          <Text
-                            style={[styles.tagName, part.type === 'linkable' && { color: colors.accent }]}
-                            numberOfLines={1}
-                          >
-                            {part.name}
+                  {linkedProducts.map(product => (
+                    <Pressable
+                      key={product.id}
+                      style={styles.tagRow}
+                      onPress={() => {
+                        if (product.trackingUrl) {
+                          WebBrowser.openBrowserAsync(product.trackingUrl)
+                        }
+                        setTagsOpen(false)
+                      }}
+                    >
+                      <View style={[
+                        styles.sourceBadge,
+                        product.source === 'amazon' && styles.sourceBadgeAmazon,
+                        product.source === 'manual' && styles.sourceBadgeManual,
+                      ]}>
+                        <Text style={[
+                          styles.sourceBadgeText,
+                          product.source === 'amazon' && styles.sourceBadgeTextAmazon,
+                          product.source === 'manual' && styles.sourceBadgeTextManual,
+                        ]}>
+                          {product.source === 'amazon' ? 'AMZ' : product.source === 'manual' ? 'MAN' : 'WEB'}
+                        </Text>
+                      </View>
+                      <View style={styles.tagInfo}>
+                        <Text style={styles.tagName} numberOfLines={1}>{product.title}</Text>
+                        {(product.category || product.brand) ? (
+                          <Text style={styles.tagCategory}>
+                            {[product.category, product.brand].filter(Boolean).join(' · ')}
                           </Text>
-                          {part.category && <Text style={styles.tagCategory}>{part.category}</Text>}
-                        </View>
-                        {part.type === 'linkable' && part.sourceUrl && (
-                          <ExternalLink size={13} color={colors.accent} />
-                        )}
-                      </Pressable>
-                    ))
-                  ) : (
-                    <View style={styles.tagsLoading}>
-                      <Text style={{ color: colors.textTertiary, fontSize: 13 }}>No parts found</Text>
-                    </View>
-                  )}
+                        ) : null}
+                      </View>
+                      {!!product.trackingUrl && (
+                        <ExternalLink size={13} color={colors.accent} />
+                      )}
+                    </Pressable>
+                  ))}
                 </View>
               </Pressable>
             </Pressable>
@@ -448,13 +423,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.surface2 + '88',
   },
-  tagDot: {
-    width: 7,
-    height: 7,
+  sourceBadge: {
+    backgroundColor: colors.surface3,
     borderRadius: 4,
-    backgroundColor: colors.surface2,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
     flexShrink: 0,
   },
+  sourceBadgeAmazon: { backgroundColor: '#FF990022', borderWidth: 1, borderColor: '#FF990055' },
+  sourceBadgeManual: { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent + '55' },
+  sourceBadgeText: { color: colors.textTertiary, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  sourceBadgeTextAmazon: { color: '#FF9900' },
+  sourceBadgeTextManual: { color: colors.accent },
   tagInfo: {
     flex: 1,
   },

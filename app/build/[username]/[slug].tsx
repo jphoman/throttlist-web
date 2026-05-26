@@ -317,7 +317,7 @@ export default function BuildProfileScreen() {
             ) : (
               posts.map(post => {
                 const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
-                const taggedIds: string[] = (() => { try { return JSON.parse(post.taggedPartIds ?? '[]') } catch { return [] } })()
+                const linkedProducts: any[] = (() => { try { return JSON.parse(post.linkedProducts ?? '[]') } catch { return [] } })()
                 const thumb = photos[0]
                 const isPinned = pinnedPostId === post.id
                 return (
@@ -347,7 +347,7 @@ export default function BuildProfileScreen() {
                       )}
                       <Text style={styles.postCaption} numberOfLines={2}>{post.caption || 'No caption'}</Text>
                       <Text style={styles.postMeta}>
-                        {taggedIds.length} tag{taggedIds.length !== 1 ? 's' : ''} · {post.likeCount} likes · {post.commentCount} comments
+                        {linkedProducts.length} tag{linkedProducts.length !== 1 ? 's' : ''} · {post.likeCount} likes · {post.commentCount} comments
                       </Text>
                     </View>
                     {isOwner && (

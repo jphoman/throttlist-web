@@ -14,7 +14,7 @@ import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Svg, { Path as SvgPath } from 'react-native-svg'
 import { ArrowLeft, Heart, MessageCircle, Share2, ExternalLink, MoreHorizontal, ProBadge, X as XIcon } from '@/components/Icons'
-import { fetchPost, fetchBuildParts, fetchComments, toggleLike, updatePost, deletePost } from '@/lib/supabaseQueries'
+import { fetchPost, fetchComments, toggleLike, updatePost, deletePost } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
@@ -45,12 +45,6 @@ export default function PostDetailScreen() {
     queryKey: ['post', postId],
     queryFn: () => fetchPost(postId!),
     enabled: !!postId,
-  })
-
-  const { data: allParts = [] } = useQuery({
-    queryKey: ['parts', post?.buildId],
-    queryFn: () => fetchBuildParts(post!.buildId),
-    enabled: !!post?.buildId,
   })
 
   const { data: fetchedComments = [] } = useQuery({
@@ -84,8 +78,7 @@ export default function PostDetailScreen() {
   const isOwner = post.userId === authUser?.id
   const displayCaption = localCaption ?? post.caption
   const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
-  const effectiveTaggedIds: string[] = (() => { try { return JSON.parse(post.taggedPartIds) } catch { return [] } })()
-  const taggedParts = allParts.filter(p => effectiveTaggedIds.includes(p.id))
+  const linkedProducts: import('@/types').LinkedProduct[] = (() => { try { return JSON.parse(post.linkedProducts) } catch { return [] } })()
 
   const topComments = [...fetchedComments]
     .sort((a, b) => b.likes - a.likes)
@@ -218,7 +211,7 @@ export default function PostDetailScreen() {
             <Text style={styles.actionCount}>{post.commentCount}</Text>
           </Pressable>
 
-          {taggedParts.length > 0 && (
+          {linkedProducts.length > 0 && (
             <Pressable style={styles.actionBtn} onPress={() => setTagsSheetOpen(v => !v)}>
               <View style={styles.tagBadge}>
                 <Svg width={36} height={16} viewBox="0 0 48 20">
@@ -228,7 +221,7 @@ export default function PostDetailScreen() {
                     fillRule="evenodd"
                   />
                 </Svg>
-                <Text style={styles.tagBadgeText}>{taggedParts.length}</Text>
+                <Text style={styles.tagBadgeText}>{linkedProducts.length}</Text>
               </View>
             </Pressable>
           )}
@@ -288,29 +281,43 @@ export default function PostDetailScreen() {
           )}
         </View>
 
-        {/* Tagged parts */}
-        {taggedParts.length > 0 && (
+        {/* Tagged products */}
+        {linkedProducts.length > 0 && (
           <View style={styles.partsSection}>
-            {taggedParts.map(part => (
-              <View key={part.id} style={styles.partRow}>
+            {linkedProducts.map(product => (
+              <Pressable
+                key={product.id}
+                style={styles.partRow}
+                onPress={() => product.trackingUrl ? WebBrowser.openBrowserAsync(product.trackingUrl) : undefined}
+                disabled={!product.trackingUrl}
+              >
                 <View style={[
-                  styles.partDot,
-                  part.type === 'linkable' && { backgroundColor: colors.accent },
-                ]} />
-                <View style={styles.partInfo}>
-                  <Text style={[styles.partName, part.type === 'linkable' && { color: colors.accent }]}>
-                    {part.name}
+                  styles.sourceBadge,
+                  product.source === 'amazon' && styles.sourceBadgeAmazon,
+                  product.source === 'manual' && styles.sourceBadgeManual,
+                ]}>
+                  <Text style={[
+                    styles.sourceBadgeText,
+                    product.source === 'amazon' && styles.sourceBadgeTextAmazon,
+                    product.source === 'manual' && styles.sourceBadgeTextManual,
+                  ]}>
+                    {product.source === 'amazon' ? 'AMZ' : product.source === 'manual' ? 'MAN' : 'WEB'}
                   </Text>
-                  {part.category ? (
-                    <Text style={styles.partCategory}>{part.category}</Text>
+                </View>
+                <View style={styles.partInfo}>
+                  <Text style={[styles.partName, !!product.trackingUrl && { color: colors.accent }]}>
+                    {product.title}
+                  </Text>
+                  {(product.category || product.brand) ? (
+                    <Text style={styles.partCategory}>
+                      {[product.category, product.brand].filter(Boolean).join(' · ')}
+                    </Text>
                   ) : null}
                 </View>
-                {part.type === 'linkable' && part.sourceUrl ? (
-                  <Pressable onPress={() => WebBrowser.openBrowserAsync(part.sourceUrl!)}>
-                    <ExternalLink size={14} color={colors.accent} />
-                  </Pressable>
-                ) : null}
-              </View>
+                {!!product.trackingUrl && (
+                  <ExternalLink size={14} color={colors.accent} />
+                )}
+              </Pressable>
             ))}
           </View>
         )}
@@ -319,38 +326,49 @@ export default function PostDetailScreen() {
       </ScrollView>
 
       {/* Tags sheet */}
-      {tagsSheetOpen && taggedParts.length > 0 && (
+      {tagsSheetOpen && linkedProducts.length > 0 && (
         <Pressable style={styles.tagsOverlay} onPress={() => setTagsSheetOpen(false)}>
           <Pressable onPress={e => e.stopPropagation()}>
             <View style={styles.tagsSheet}>
               <View style={styles.tagsSheetHeader}>
-                <Text style={styles.tagsSheetTitle}>Tagged Parts</Text>
+                <Text style={styles.tagsSheetTitle}>Tagged Products</Text>
                 <Pressable onPress={() => setTagsSheetOpen(false)} style={styles.tagsSheetClose}>
                   <XIcon size={16} color={colors.textSecondary} />
                 </Pressable>
               </View>
-              {taggedParts.map(part => (
+              {linkedProducts.map(product => (
                 <Pressable
-                  key={part.id}
+                  key={product.id}
                   style={styles.tagsSheetRow}
                   onPress={() => {
-                    if (part.type === 'linkable' && part.sourceUrl) {
-                      WebBrowser.openBrowserAsync(part.sourceUrl)
-                    }
+                    if (product.trackingUrl) WebBrowser.openBrowserAsync(product.trackingUrl)
                     setTagsSheetOpen(false)
                   }}
                 >
                   <View style={[
-                    styles.tagsSheetDot,
-                    part.type === 'linkable' && { backgroundColor: colors.accent },
-                  ]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.tagsSheetPartName, part.type === 'linkable' && { color: colors.accent }]} numberOfLines={1}>
-                      {part.name}
+                    styles.sourceBadge,
+                    product.source === 'amazon' && styles.sourceBadgeAmazon,
+                    product.source === 'manual' && styles.sourceBadgeManual,
+                  ]}>
+                    <Text style={[
+                      styles.sourceBadgeText,
+                      product.source === 'amazon' && styles.sourceBadgeTextAmazon,
+                      product.source === 'manual' && styles.sourceBadgeTextManual,
+                    ]}>
+                      {product.source === 'amazon' ? 'AMZ' : product.source === 'manual' ? 'MAN' : 'WEB'}
                     </Text>
-                    {part.category ? <Text style={styles.tagsSheetCategory}>{part.category}</Text> : null}
                   </View>
-                  {part.type === 'linkable' && part.sourceUrl && (
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.tagsSheetPartName, !!product.trackingUrl && { color: colors.accent }]} numberOfLines={1}>
+                      {product.title}
+                    </Text>
+                    {(product.category || product.brand) ? (
+                      <Text style={styles.tagsSheetCategory}>
+                        {[product.category, product.brand].filter(Boolean).join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {!!product.trackingUrl && (
                     <ExternalLink size={14} color={colors.accent} />
                   )}
                 </Pressable>
@@ -533,13 +551,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
-  partDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+  sourceBadge: {
     backgroundColor: colors.surface3,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
     flexShrink: 0,
   },
+  sourceBadgeAmazon: { backgroundColor: '#FF990022', borderWidth: 1, borderColor: '#FF990055' },
+  sourceBadgeManual: { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent + '55' },
+  sourceBadgeText: { color: colors.textTertiary, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  sourceBadgeTextAmazon: { color: '#FF9900' },
+  sourceBadgeTextManual: { color: colors.accent },
   partInfo: {
     flex: 1,
   },
@@ -686,13 +709,6 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderBottomWidth: 1,
     borderBottomColor: colors.surface2 + '66',
-  },
-  tagsSheetDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.surface3,
-    flexShrink: 0,
   },
   tagsSheetPartName: {
     color: colors.textPrimary,
