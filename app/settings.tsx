@@ -66,25 +66,27 @@ export default function SettingsScreen() {
 
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
 
   async function handleAvatarFileChange(e: any) {
     const file = e.target?.files?.[0]
     if (!file || !userId) return
     setAvatarUploading(true)
+    setAvatarError(null)
     try {
       const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
       const path = `${userId}/avatar-${Date.now()}.${ext}`
-      const { error } = await supabase.storage
+      const { error: storageError } = await supabase.storage
         .from('posts')
         .upload(path, file, { contentType: file.type, upsert: true })
-      if (error) throw error
+      if (storageError) throw storageError
       const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
       setLocalAvatarUrl(publicUrl)
       await updateProfile(userId, { avatar_url: publicUrl })
       queryClient.invalidateQueries({ queryKey: ['profile', userId] })
     } catch (err: any) {
       console.error('Avatar upload failed', err)
-      Alert.alert('Upload failed', err?.message ?? 'Could not upload photo. Please try again.')
+      setAvatarError(err?.message ?? 'Upload failed. Please try again.')
     } finally {
       setAvatarUploading(false)
       e.target.value = ''
@@ -126,6 +128,7 @@ export default function SettingsScreen() {
     setInstagram(user?.instagramHandle ?? '')
     setYoutube(user?.youtubeHandle ?? '')
     setLocalAvatarUrl(null)
+    setAvatarError(null)
     setSection('editProfile')
   }
 
@@ -322,6 +325,9 @@ export default function SettingsScreen() {
                 <Text style={styles.changePhotoText}>Change photo</Text>
               </Pressable>
             )}
+            {avatarError ? (
+              <Text style={styles.avatarError}>{avatarError}</Text>
+            ) : null}
           </View>
 
           <View style={styles.fieldGroup}>
@@ -610,6 +616,7 @@ const styles = StyleSheet.create({
   editAvatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: colors.surface3 },
   changePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   changePhotoText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  avatarError: { color: colors.accent, fontSize: 12, textAlign: 'center' },
   fieldGroup: { gap: 16 },
   field: { gap: 6 },
   fieldLabel: {

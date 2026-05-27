@@ -134,7 +134,8 @@ export async function updateProfile(userId: string, updates: {
     .eq('id', userId)
     .select()
     .single()
-  if (error || !data) return null
+  if (error) throw error
+  if (!data) return null
   return mapProfile(data)
 }
 
