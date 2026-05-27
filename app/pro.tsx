@@ -10,7 +10,6 @@ import {
 import { router } from 'expo-router'
 import {
   ArrowLeft,
-  Star,
   DollarSign,
   TrendingUp,
   CheckCircle,
@@ -39,7 +38,7 @@ const FEATURES = [
     body: 'See click-through rates, top-performing parts, and estimated earnings — updated in real time.',
   },
   {
-    icon: <Star size={20} color={colors.accent} fill={colors.accent} />,
+    icon: <ProBadge size={20} />,
     title: 'Pro badge on your profile',
     body: 'Stand out with a verified Pro badge on your profile and all your builds.',
   },
@@ -58,8 +57,7 @@ const FEATURES = [
 const INCLUDED = [
   'Everything in Basic — always free',
   'Customized storefront on your profile',
-  'Affiliate earnings on all part links',
-  '70% payout rate (Throttlist keeps 30%)',
+  'Minimal hassle earnings on affiliate linked items',
   'Monthly bank payouts via Stripe',
   'Analytics dashboard',
   'Pro badge',
@@ -83,11 +81,11 @@ export default function ProScreen() {
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.starCircle}>
-            <Star size={36} color={colors.accent} fill={colors.accent} />
+            <ProBadge size={48} />
           </View>
           <Text style={styles.heroTitle}>Get paid to build.</Text>
           <Text style={styles.heroSub}>
-            Every part link you share can earn you money. Pro unlocks your payouts and puts your builds front and center.
+            Every tag link you share can earn you money. Pro unlocks your payouts and puts your builds front and center.
           </Text>
         </View>
 
@@ -133,11 +131,9 @@ export default function ProScreen() {
         {/* Earnings callout */}
         <View style={styles.callout}>
           <Text style={styles.calloutText}>
-            Beta builders are averaging{' '}
-            <Text style={styles.calloutAccent}>$38/month</Text>
-            {' '}in affiliate commissions. At 70% that's{' '}
-            <Text style={styles.calloutAccent}>$26.60</Text>
-            {' '}back in your pocket each month — after the $5 Pro fee.
+            Builders on average are earning{' '}
+            <Text style={styles.calloutAccent}>$30 - $100</Text>
+            {' '}a month in commissions from tags.
           </Text>
         </View>
 
