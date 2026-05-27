@@ -128,53 +128,54 @@ BEGIN
   -- ── 2. Profiles (trigger may have created rows; upsert fills extra fields) ──
   INSERT INTO public.profiles (
     id, username, display_name, bio, location,
-    instagram_handle, youtube_handle, avatar_url
+    instagram_handle, youtube_handle, avatar_url, is_pro
   ) VALUES
     (uid_cap,    'cappuccinomoto',  'Cappuccino Moto',
      'Pictures of my ride days. Videos on YouTube. Details on mods & gear below.',
      'United States', 'cappuccinomoto', 'cappuccinomoto',
-     'https://throttlist.com/avatars/cappuccinomoto.jpg'),
+     'https://throttlist.com/avatars/cappuccinomoto.jpg', true),
 
     (uid_invest, 'investomoto',     'Ryan | Motorcyclist',
      'Invest in the Journey. Currently: Texas. BMW RnineT · Ducati Desert Sled.',
      'Texas', 'investomoto', NULL,
-     'https://throttlist.com/avatars/investomoto.jpg'),
+     'https://throttlist.com/avatars/investomoto.jpg', false),
 
     (uid_feelz,  'moto_feelz',     'Rob Hamilton',
      'South Australia. @insta360 & @quadlock Global Ambassador. 120k+ on YouTube.',
      'South Australia, AU', 'moto_feelz', 'robhamilton',
-     'https://throttlist.com/avatars/moto_feelz.jpg'),
+     'https://throttlist.com/avatars/moto_feelz.jpg', false),
 
     (uid_retro,  'retroscrambler_','Fred Neves',
      'Motorcycle Enthusiast and Scrambler rider. Photography & Moto Lifestyle. Triumph Street Scrambler.',
      'United States', 'retroscrambler_', NULL,
-     'https://throttlist.com/avatars/retroscrambler_.jpg'),
+     'https://throttlist.com/avatars/retroscrambler_.jpg', false),
 
     (uid_s11,    'seven11moto',    'Seven11Moto',
      'Life on the road with my Yamaha XSR900 60th Anniversary. Camera: Sony A7.',
      'United States', 'seven11moto', NULL,
-     'https://throttlist.com/avatars/seven11moto.jpg'),
+     'https://throttlist.com/avatars/seven11moto.jpg', false),
 
     (uid_croc,   'thecrocodile',   'Chuck Schmidt',
      '🐊',
      'United States', 'thecrocodile', NULL,
-     'https://throttlist.com/avatars/thecrocodile.jpg'),
+     'https://throttlist.com/avatars/thecrocodile.jpg', false),
 
     (uid_mzuc,   'motozuc',        'Justin - Moto Zuc',
      E'Fell in love with motorcycles at age 3 on a \'65 Triumph Thunderbird. New prints below.',
      'United States', 'motozuc', NULL,
-     'https://throttlist.com/avatars/motozuc.jpg'),
+     'https://throttlist.com/avatars/motozuc.jpg', false),
 
     (uid_cold,   'coldbrewmoto',   'Cold Brew Moto',
      E'#coldbrewcrew. \'23 FTR Carbon R · \'04 F4 750 SPR · \'18 XSR700',
      'United States', 'coldbrewmoto', NULL,
-     'https://throttlist.com/avatars/coldbrewmoto.jpg')
+     'https://throttlist.com/avatars/coldbrewmoto.jpg', false)
   ON CONFLICT (id) DO UPDATE SET
     bio              = EXCLUDED.bio,
     location         = EXCLUDED.location,
     instagram_handle = EXCLUDED.instagram_handle,
     youtube_handle   = EXCLUDED.youtube_handle,
-    avatar_url       = EXCLUDED.avatar_url;
+    avatar_url       = EXCLUDED.avatar_url,
+    is_pro           = EXCLUDED.is_pro;
 
   -- ── 3. Builds ────────────────────────────────────────────────────────────────
   INSERT INTO public.builds (
