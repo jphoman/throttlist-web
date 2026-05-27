@@ -524,7 +524,7 @@ export async function fetchAllProfiles(limit = 10, excludeUserId?: string): Prom
 export async function fetchComments(postId: string): Promise<Comment[]> {
   const { data, error } = await supabase
     .from('comments')
-    .select('*, profiles(username, display_name, avatar_url)')
+    .select('*, profiles(username, display_name, avatar_url, is_pro)')
     .eq('post_id', postId)
     .is('parent_id', null)
     .order('created_at', { ascending: true })
@@ -541,6 +541,7 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
     username: row.profiles?.username,
     displayName: row.profiles?.display_name,
     avatarUrl: row.profiles?.avatar_url ?? '',
+    isPro: !!(row.profiles?.is_pro),
   }))
 }
 
@@ -548,7 +549,7 @@ export async function addComment(userId: string, postId: string, body: string, p
   const { data, error } = await supabase
     .from('comments')
     .insert({ user_id: userId, post_id: postId, body, parent_id: parentId ?? null })
-    .select('*, profiles(username, display_name, avatar_url)')
+    .select('*, profiles(username, display_name, avatar_url, is_pro)')
     .single()
   if (error || !data) throw error
   await supabase.from('posts').update({ comment_count: supabase.rpc('increment', { x: 1 }) }).eq('id', postId)
@@ -565,6 +566,7 @@ export async function addComment(userId: string, postId: string, body: string, p
     username: data.profiles?.username,
     displayName: data.profiles?.display_name,
     avatarUrl: data.profiles?.avatar_url ?? '',
+    isPro: !!(data.profiles?.is_pro),
   }
 }
 

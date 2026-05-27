@@ -1,6 +1,7 @@
 import React from 'react'
 import { View, Text, StyleSheet, Pressable, Image } from 'react-native'
 import { colors } from '@/constants/throttlist'
+import { ProBadge } from '@/components/Icons'
 import type { Build } from '@/types'
 
 interface Props {
@@ -35,7 +36,10 @@ export default function BuildTile({ build, size = 120, onPress, isFollowing, onF
           </View>
           <View style={styles.textBlock}>
             {build.username && (
-              <Text style={styles.username} numberOfLines={1}>@{build.username}</Text>
+              <View style={styles.usernameRow}>
+                <Text style={styles.username} numberOfLines={1}>@{build.username}</Text>
+                {isPro && <ProBadge size={10} />}
+              </View>
             )}
             <Text style={styles.model} numberOfLines={1}>
               {build.year} {build.make} {build.model}
@@ -105,6 +109,11 @@ const styles = StyleSheet.create({
   textBlock: {
     flex: 1,
     minWidth: 0,
+  },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   username: {
     color: 'rgba(255,255,255,0.6)',

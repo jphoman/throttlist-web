@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft } from '@/components/Icons'
+import { ArrowLeft, ProBadge } from '@/components/Icons'
 import { fetchCreatorFollowers } from '@/lib/supabaseQueries'
 import { colors } from '@/constants/throttlist'
 import type { User } from '@/types'
@@ -73,9 +73,12 @@ function FollowerRow({ user }: { user: User }) {
         </View>
       )}
       <View style={styles.info}>
-        <Text style={styles.displayName} numberOfLines={1}>
-          {user.displayName || user.username}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.displayName} numberOfLines={1}>
+            {user.displayName || user.username}
+          </Text>
+          {(user.proTier === '1' || user.proTier === 1) && <ProBadge size={13} />}
+        </View>
         <Text style={styles.username} numberOfLines={1}>
           @{user.username}
         </Text>
@@ -152,6 +155,11 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
     gap: 2,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   displayName: {
     color: colors.textPrimary,

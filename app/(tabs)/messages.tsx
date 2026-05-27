@@ -11,7 +11,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native'
-import { Edit2, Search, X, ArrowLeft } from '@/components/Icons'
+import { Edit2, Search, X, ArrowLeft, ProBadge } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { router, useFocusEffect } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
@@ -242,7 +242,10 @@ export default function MessagesScreen() {
                   size={44}
                 />
                 <View style={styles.userResultInfo}>
-                  <Text style={styles.userResultName}>{user.displayName}</Text>
+                  <View style={styles.userResultNameRow}>
+                    <Text style={styles.userResultName}>{user.displayName}</Text>
+                    {(user.proTier === '1' || user.proTier === 1) && <ProBadge size={13} />}
+                  </View>
                   <Text style={styles.userResultHandle}>@{user.username}</Text>
                 </View>
               </Pressable>
@@ -458,6 +461,11 @@ const styles = StyleSheet.create({
   userResultInfo: {
     flex: 1,
     gap: 2,
+  },
+  userResultNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   userResultName: {
     color: colors.textPrimary,

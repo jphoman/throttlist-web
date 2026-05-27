@@ -13,7 +13,7 @@ import {
 import Svg, { Path as SvgPath } from 'react-native-svg'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
-import { Search, MessageCircle, Heart, TrendingUp } from '@/components/Icons'
+import { Search, MessageCircle, Heart, TrendingUp, ProBadge } from '@/components/Icons'
 import { fetchAllBuilds, fetchAllProfiles, fetchFeed } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
@@ -146,7 +146,10 @@ export default function DiscoverScreen() {
                   onPress={() => router.push(`/user/${user.username}`)}
                 >
                   <InitialsAvatar name={user.displayName} photoUrl={user.avatarUrl} size={58} />
-                  <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
+                  <View style={styles.userHandleRow}>
+                    <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
+                    {(user.proTier === '1' || user.proTier === 1) && <ProBadge size={12} />}
+                  </View>
                 </Pressable>
               ))}
             </ScrollView>
@@ -332,11 +335,16 @@ const styles = StyleSheet.create({
     gap: 6,
     width: 68,
   },
+  userHandleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
   userHandle: {
     color: colors.textSecondary,
     fontSize: 11,
     textAlign: 'center',
-    width: 68,
   },
   buildsRow: {
     paddingLeft: 16,

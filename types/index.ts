@@ -107,6 +107,7 @@ export interface Comment {
   username?: string
   displayName?: string
   avatarUrl?: string
+  isPro?: boolean
 }
 
 export interface Tag {

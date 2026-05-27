@@ -67,6 +67,7 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
             >
               @{comment.username}
             </Text>
+            {comment.isPro && <ProBadge size={11} />}
           </View>
           <Text style={styles.commentTime}>{timeAgo(comment.createdAt)}</Text>
         </View>
