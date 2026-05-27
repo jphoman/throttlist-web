@@ -69,7 +69,8 @@ export default function SettingsScreen() {
     const builds = await fetchUserBuilds(userId)
     const buildItems: Extract<OrderItem, { type: 'build' }>[] = builds
       .map(b => ({ type: 'build' as const, id: b.id, nickname: b.nickname, year: b.year, make: b.make, model: b.model }))
-    setProfileOrder(buildItems)
+    // Always include Top Builds and Store as moveable section blocks
+    setProfileOrder([{ type: 'topBuilds' }, ...buildItems, { type: 'store' }])
     setSection('reorderProfile')
   }
 
@@ -400,6 +401,11 @@ export default function SettingsScreen() {
 
         <Text style={styles.sectionLabel}>Profile</Text>
         <View style={styles.group}>
+          <Pressable style={styles.row} onPress={() => router.push('/top-builds-edit' as any)}>
+            <Text style={styles.rowText}>Top Builds</Text>
+            <ChevronRight size={16} color={colors.textTertiary} />
+          </Pressable>
+          <View style={styles.separator} />
           {isPro && (
             <>
               <View style={styles.row}>

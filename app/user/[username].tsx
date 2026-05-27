@@ -19,6 +19,7 @@ import {
   fetchFollowingCount,
   fetchFollowedBuildIds,
   fetchCreatorFollowerCount,
+  fetchBuildsByIds,
   toggleBuildFollow,
 } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
@@ -63,6 +64,12 @@ export default function UserProfileScreen() {
     queryKey: ['followed-builds', userId],
     queryFn: () => fetchFollowedBuildIds(userId),
     enabled: !!userId,
+  })
+
+  const { data: topBuilds = [] } = useQuery({
+    queryKey: ['top-builds', user?.id],
+    queryFn: () => fetchBuildsByIds(user!.topBuildIds ?? []),
+    enabled: !!user?.id && (user.topBuildIds?.length ?? 0) > 0,
   })
 
   // ── Per-build follow (from BuildCard tap) ─────────────────────────────────
@@ -229,6 +236,24 @@ export default function UserProfileScreen() {
           {/* Bio — full width below the avatar row */}
           {user.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
         </View>
+
+        {/* ── Top Builds ── */}
+        {topBuilds.length > 0 && (
+          <View style={styles.topBuildsSection}>
+            <Text style={styles.sectionLabel}>Top Builds</Text>
+            {topBuilds.map(build => (
+              <View key={build.id} style={styles.buildItemWrap}>
+                <BuildCard
+                  build={build}
+                  showFollowButton={!isOwner}
+                  isFollowing={followedBuildIds.has(build.id)}
+                  onFollow={() => handleFollowBuild(build.id)}
+                  onPress={() => build.username && router.push(`/build/${build.username}/${build.slug}`)}
+                />
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ── Builds list ── */}
         <View style={styles.buildsSectionHeader}>
@@ -404,7 +429,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Builds
+  // Top Builds + Builds
+  topBuildsSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: 8,
+  },
   buildsSectionHeader: { paddingHorizontal: 16, paddingTop: 16 },
   buildItemWrap: { paddingHorizontal: 16 },
   sectionLabel: { color: colors.textPrimary, fontSize: 15, fontWeight: '700', marginBottom: 14 },

@@ -12,7 +12,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Instagram, Youtube, Settings, ChevronRight, Star, ProBadge, Plus } from '@/components/Icons'
-import { fetchProfile, fetchUserBuilds, fetchFollowingCount, fetchCreatorFollowerCount } from '@/lib/supabaseQueries'
+import { fetchProfile, fetchUserBuilds, fetchFollowingCount, fetchCreatorFollowerCount, fetchBuildsByIds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
 import BuildCard from '@/components/BuildCard'
@@ -41,6 +41,12 @@ export default function ProfileScreen() {
 
   const user = data?.[0] ?? null
   const builds = data?.[1] ?? []
+
+  const { data: topBuilds = [] } = useQuery({
+    queryKey: ['top-builds', userId],
+    queryFn: () => fetchBuildsByIds(user!.topBuildIds ?? []),
+    enabled: !!user?.id && (user?.topBuildIds?.length ?? 0) > 0,
+  })
 
   if (isLoading || !user) {
     return (
@@ -128,6 +134,27 @@ export default function ProfileScreen() {
           </Pressable>
         )}
       </View>
+
+      {/* Top Builds */}
+      {topBuilds.length > 0 && (
+        <View style={styles.topBuildsSection}>
+          <View style={styles.topBuildsSectionHeader}>
+            <Text style={styles.sectionLabel}>Top Builds</Text>
+            <Pressable onPress={() => router.push('/top-builds-edit' as any)}>
+              <Text style={styles.editLink}>Edit</Text>
+            </Pressable>
+          </View>
+          {topBuilds.map(build => (
+            <View key={build.id} style={styles.buildItemWrap}>
+              <BuildCard
+                build={build}
+                showFollowButton={false}
+                onPress={() => build.username && router.push(`/build/${build.username}/${build.slug}`)}
+              />
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Builds */}
       <View style={styles.buildsSectionHeader}>
@@ -288,6 +315,24 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     flex: 1,
+  },
+  topBuildsSection: {
+    paddingTop: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: 8,
+  },
+  topBuildsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  editLink: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
   },
   buildsSectionHeader: {
     paddingHorizontal: 16,

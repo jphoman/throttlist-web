@@ -8,54 +8,33 @@ import {
   Platform,
   TextInput,
   Image,
+  ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Search, X, Plus } from '@/components/Icons'
 import {
-  listBuilds, listUsers, listFollowingBuilds,
-  getTopBuilds, getUserTopBuildIds, setUserTopBuildIds,
-} from '@/lib/data'
-import { colors, formatFollowers, MOCK_USER_ID } from '@/constants/throttlist'
+  fetchAllBuilds,
+  fetchFollowedBuilds,
+  fetchProfile,
+  updateTopBuildIds,
+} from '@/lib/supabaseQueries'
+import { useAuth } from '@/lib/auth'
+import { colors, formatFollowers } from '@/constants/throttlist'
+import type { Build } from '@/types'
 
 const MAX = 10
 
-async function fetchData() {
-  const [allBuilds, allUsers, followedBuilds] = await Promise.all([
-    listBuilds({ status: 'active' }),
-    listUsers(),
-    listFollowingBuilds(MOCK_USER_ID),
+async function fetchEditorData(userId: string) {
+  const [allBuilds, followedBuilds, profile] = await Promise.all([
+    fetchAllBuilds(100),
+    fetchFollowedBuilds(userId),
+    fetchProfile(userId),
   ])
-  const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]))
-  const othersBuilds = allBuilds
-    .filter(b => b.userId !== MOCK_USER_ID)
-    .map(b => ({
-      ...b,
-      username: userMap[b.userId]?.username ?? '',
-      avatarUrl: userMap[b.userId]?.avatarUrl ?? null,
-      ownerIsPro: parseInt(userMap[b.userId]?.proTier as string) >= 1,
-    }))
-
+  const othersBuilds = allBuilds.filter(b => b.userId !== userId)
   const followedIds = new Set(followedBuilds.map(b => b.id))
-
-  // Initial selection: saved custom or default top 10
-  const saved = getUserTopBuildIds(MOCK_USER_ID)
-  const initialIds: string[] = saved ?? getTopBuilds(MAX, MOCK_USER_ID).map(b => b.id)
-
+  const initialIds: string[] = profile?.topBuildIds ?? []
   return { othersBuilds, followedIds, initialIds }
-}
-
-type BuildRow = {
-  id: string
-  nickname?: string
-  year?: number
-  make?: string
-  model?: string
-  coverPhotoUrl?: string | null
-  followerCount: number
-  username: string
-  avatarUrl: string | null
-  ownerIsPro: boolean
 }
 
 function BuildItem({
@@ -64,7 +43,7 @@ function BuildItem({
   onAdd,
   onRemove,
 }: {
-  build: BuildRow
+  build: Build
   selected: boolean
   onAdd: () => void
   onRemove: () => void
@@ -106,16 +85,20 @@ function BuildItem({
 }
 
 export default function TopBuildsEditScreen() {
+  const { user: authUser } = useAuth()
+  const userId = authUser?.id ?? ''
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[] | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  const { data } = useQuery({
-    queryKey: ['top-builds-edit'],
-    queryFn: fetchData,
+  const { data, isLoading } = useQuery({
+    queryKey: ['top-builds-edit', userId],
+    queryFn: () => fetchEditorData(userId),
+    enabled: !!userId,
   })
 
-  // Initialise from fetched data on first load
+  // Initialise from fetched profile on first load
   const effectiveIds: string[] = selectedIds ?? data?.initialIds ?? []
 
   function add(id: string) {
@@ -127,11 +110,18 @@ export default function TopBuildsEditScreen() {
     setSelectedIds(effectiveIds.filter(x => x !== id))
   }
 
-  function save() {
-    setUserTopBuildIds(MOCK_USER_ID, effectiveIds)
-    queryClient.invalidateQueries({ queryKey: ['profile'] })
-    queryClient.invalidateQueries({ queryKey: ['user-profile'] })
-    router.back()
+  async function save() {
+    if (!userId) return
+    setSaving(true)
+    try {
+      await updateTopBuildIds(userId, effectiveIds)
+      queryClient.invalidateQueries({ queryKey: ['profile', userId] })
+      queryClient.invalidateQueries({ queryKey: ['profile-by-username'] })
+      queryClient.invalidateQueries({ queryKey: ['top-builds', userId] })
+      router.back()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const q = query.trim().toLowerCase()
@@ -139,12 +129,12 @@ export default function TopBuildsEditScreen() {
 
   // Build lookup map
   const buildMap = useMemo(() => {
-    if (!data) return {}
-    return Object.fromEntries(data.othersBuilds.map(b => [b.id, b]))
+    if (!data) return {} as Record<string, Build>
+    return Object.fromEntries(data.othersBuilds.map(b => [b.id, b])) as Record<string, Build>
   }, [data])
 
   // Selected builds in order
-  const selectedBuilds = effectiveIds.map(id => buildMap[id]).filter(Boolean) as BuildRow[]
+  const selectedBuilds = effectiveIds.map(id => buildMap[id]).filter(Boolean) as Build[]
 
   // Suggested: followed first (by follower count), then top non-followed
   const suggestions = useMemo(() => {
@@ -159,12 +149,12 @@ export default function TopBuildsEditScreen() {
     return [...followed, ...rest]
   }, [data, effectiveIds])
 
-  // Search results (all builds matching query, with selected state)
+  // Search results
   const searchResults = useMemo(() => {
     if (!q || !data) return []
     return data.othersBuilds
       .filter(b => {
-        const label = `${b.nickname ?? ''} ${b.year ?? ''} ${b.make ?? ''} ${b.model ?? ''} ${b.username}`.toLowerCase()
+        const label = `${b.nickname ?? ''} ${b.year ?? ''} ${b.make ?? ''} ${b.model ?? ''} ${b.username ?? ''}`.toLowerCase()
         return label.includes(q)
       })
       .sort((a, b) => b.followerCount - a.followerCount)
@@ -180,8 +170,10 @@ export default function TopBuildsEditScreen() {
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
         <Text style={styles.headerTitle}>Edit Top Builds</Text>
-        <Pressable onPress={save} style={styles.saveBtn}>
-          <Text style={styles.saveBtnText}>Save</Text>
+        <Pressable onPress={save} style={styles.saveBtn} disabled={saving}>
+          <Text style={[styles.saveBtnText, saving && { opacity: 0.5 }]}>
+            {saving ? 'Saving…' : 'Save'}
+          </Text>
         </Pressable>
       </View>
 
@@ -206,78 +198,84 @@ export default function TopBuildsEditScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Selected section */}
-        {selectedBuilds.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>
-                SELECTED ({effectiveIds.length}/{MAX})
-              </Text>
-              {atMax && <Text style={styles.sectionNote}>Max reached</Text>}
-            </View>
-            {selectedBuilds.map(build => (
-              <BuildItem
-                key={build.id}
-                build={build}
-                selected
-                onAdd={() => {}}
-                onRemove={() => remove(build.id)}
-              />
-            ))}
-          </>
-        )}
-
-        {/* No query: show suggestions */}
-        {!q && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>SUGGESTED</Text>
-              {data?.followedIds.size ? (
-                <Text style={styles.sectionNote}>Follows first</Text>
-              ) : null}
-            </View>
-            {suggestions.length === 0 && (
-              <Text style={styles.emptyNote}>No more builds to suggest.</Text>
-            )}
-            {suggestions.map(build => (
-              <BuildItem
-                key={build.id}
-                build={build}
-                selected={false}
-                onAdd={() => add(build.id)}
-                onRemove={() => {}}
-              />
-            ))}
-          </>
-        )}
-
-        {/* Query: show search results */}
-        {!!q && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>RESULTS ({searchResults.length})</Text>
-            </View>
-            {searchResults.length === 0 && (
-              <Text style={styles.emptyNote}>No builds match "{query}".</Text>
-            )}
-            {searchResults.map(build => {
-              const sel = selectedSet.has(build.id)
-              return (
+      {isLoading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {/* Selected section */}
+          {selectedBuilds.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>
+                  SELECTED ({effectiveIds.length}/{MAX})
+                </Text>
+                {atMax && <Text style={styles.sectionNote}>Max reached</Text>}
+              </View>
+              {selectedBuilds.map(build => (
                 <BuildItem
                   key={build.id}
                   build={build}
-                  selected={sel}
-                  onAdd={() => add(build.id)}
+                  selected
+                  onAdd={() => {}}
                   onRemove={() => remove(build.id)}
                 />
-              )
-            })}
-          </>
-        )}
+              ))}
+            </>
+          )}
 
-        <View style={{ height: 48 }} />
-      </ScrollView>
+          {/* No query: show suggestions */}
+          {!q && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>SUGGESTED</Text>
+                {(data?.followedIds.size ?? 0) > 0 ? (
+                  <Text style={styles.sectionNote}>Follows first</Text>
+                ) : null}
+              </View>
+              {suggestions.length === 0 && (
+                <Text style={styles.emptyNote}>No more builds to suggest.</Text>
+              )}
+              {suggestions.map(build => (
+                <BuildItem
+                  key={build.id}
+                  build={build}
+                  selected={false}
+                  onAdd={() => add(build.id)}
+                  onRemove={() => {}}
+                />
+              ))}
+            </>
+          )}
+
+          {/* Query: show search results */}
+          {!!q && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>RESULTS ({searchResults.length})</Text>
+              </View>
+              {searchResults.length === 0 && (
+                <Text style={styles.emptyNote}>No builds match "{query}".</Text>
+              )}
+              {searchResults.map(build => {
+                const sel = selectedSet.has(build.id)
+                return (
+                  <BuildItem
+                    key={build.id}
+                    build={build}
+                    selected={sel}
+                    onAdd={() => add(build.id)}
+                    onRemove={() => remove(build.id)}
+                  />
+                )
+              })}
+            </>
+          )}
+
+          <View style={{ height: 48 }} />
+        </ScrollView>
+      )}
     </View>
   )
 }
@@ -300,6 +298,7 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4, width: 44 },
   saveBtn: { padding: 4, width: 44, alignItems: 'flex-end' },
   saveBtnText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   searchWrap: {
     paddingHorizontal: 16,
     paddingVertical: 10,

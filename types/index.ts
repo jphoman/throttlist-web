@@ -10,6 +10,7 @@ export interface User {
   proTier: string | number
   affiliateDisclosureDismissed: string | number
   createdAt: string
+  topBuildIds?: string[]
 }
 
 export interface Build {

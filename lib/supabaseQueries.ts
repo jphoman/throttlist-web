@@ -41,6 +41,7 @@ function mapProfile(row: any): User {
     proTier: row.is_pro ? '1' : '0',
     affiliateDisclosureDismissed: '0',
     createdAt: row.created_at,
+    topBuildIds: Array.isArray(row.top_build_ids) ? row.top_build_ids : [],
   }
 }
 
@@ -471,6 +472,26 @@ export async function fetchAllBuilds(limit = 20): Promise<Build[]> {
     .limit(limit)
   if (error || !data) return []
   return data.map(mapBuild)
+}
+
+export async function fetchBuildsByIds(ids: string[]): Promise<Build[]> {
+  if (!ids.length) return []
+  const { data, error } = await supabase
+    .from('builds')
+    .select('*, profiles(username, display_name, avatar_url, is_pro), parts(count)')
+    .in('id', ids)
+    .eq('status', 'active')
+  if (error || !data) return []
+  // Preserve the caller's order
+  const map = Object.fromEntries(data.map((r: any) => [r.id, mapBuild(r)]))
+  return ids.map(id => map[id]).filter(Boolean) as Build[]
+}
+
+export async function updateTopBuildIds(userId: string, ids: string[]): Promise<void> {
+  await supabase
+    .from('profiles')
+    .update({ top_build_ids: ids })
+    .eq('id', userId)
 }
 
 export async function fetchAllProfiles(limit = 10, excludeUserId?: string): Promise<User[]> {
