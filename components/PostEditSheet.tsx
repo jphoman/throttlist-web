@@ -22,6 +22,7 @@ import {
 import { X, Pin, Lock, Globe, Trash, Camera, Tag, Plus } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import type { Post, LinkedProduct } from '@/types'
+import { supabase } from '@/lib/supabase'
 // Shared product tag sheet — single source of truth with compose screen
 import ProductSheet from '@/components/ProductSheet'
 
@@ -40,6 +41,7 @@ interface PostEditSheetProps {
     caption: string
     isPrivate: boolean
     linkedProducts: LinkedProduct[]
+    photos: string[]
   }) => void
   onTogglePin: () => void
   onDelete: () => void
@@ -62,6 +64,8 @@ export default function PostEditSheet({
   const [photos, setPhotos] = useState<string[]>([])
   const [linkedProducts, setLinkedProducts] = useState<LinkedProduct[]>([])
   const [productSheetOpen, setProductSheetOpen] = useState(false)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
 
   // Seed state when the sheet opens
   useEffect(() => {
@@ -71,11 +75,35 @@ export default function PostEditSheet({
       setPhotos((() => { try { return JSON.parse(post.photos) } catch { return [] } })())
       setLinkedProducts((() => { try { return JSON.parse(post.linkedProducts ?? '[]') } catch { return [] } })())
       setProductSheetOpen(false)
+      setPhotoError(null)
     }
   }, [visible, post])
 
   function removePhoto(uri: string) {
     setPhotos(prev => prev.filter(p => p !== uri))
+  }
+
+  async function handlePhotoFileChange(e: any) {
+    const file = e.target?.files?.[0]
+    if (!file) return
+    setPhotoUploading(true)
+    setPhotoError(null)
+    try {
+      const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
+      const path = `${userId}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from('posts')
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+      setPhotos(prev => [...prev, publicUrl])
+    } catch (err: any) {
+      console.error('Photo upload failed', err)
+      setPhotoError(err?.message ?? 'Upload failed. Please try again.')
+    } finally {
+      setPhotoUploading(false)
+      e.target.value = ''
+    }
   }
 
   function handleProductConfirm(partial: Omit<LinkedProduct, 'x' | 'y'>) {
@@ -89,7 +117,7 @@ export default function PostEditSheet({
   }
 
   function handleSave() {
-    onSave({ caption: caption.trim(), isPrivate, linkedProducts })
+    onSave({ caption: caption.trim(), isPrivate, linkedProducts, photos })
     onClose()
   }
 
@@ -144,11 +172,50 @@ export default function PostEditSheet({
                       </Pressable>
                     </View>
                   ))}
-                  <Pressable style={styles.addPhotoBtn}>
-                    <Camera size={20} color={colors.textTertiary} />
-                    <Text style={styles.addPhotoBtnText}>Add</Text>
-                  </Pressable>
+                  {Platform.OS === 'web' ? (
+                    <>
+                      <input
+                        id="post-photo-file-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoFileChange}
+                        style={{ display: 'none' }}
+                        disabled={photoUploading}
+                      />
+                      <label
+                        htmlFor="post-photo-file-input"
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 4,
+                          width: 76,
+                          height: 76,
+                          borderRadius: 10,
+                          backgroundColor: colors.surface2,
+                          border: `1px dashed ${colors.surface3}`,
+                          cursor: photoUploading ? 'not-allowed' : 'pointer',
+                          opacity: photoUploading ? 0.5 : 1,
+                          flexShrink: 0,
+                        } as any}
+                      >
+                        <Camera size={20} color={colors.textTertiary} />
+                        <Text style={styles.addPhotoBtnText}>
+                          {photoUploading ? '…' : 'Add'}
+                        </Text>
+                      </label>
+                    </>
+                  ) : (
+                    <Pressable style={styles.addPhotoBtn}>
+                      <Camera size={20} color={colors.textTertiary} />
+                      <Text style={styles.addPhotoBtnText}>Add</Text>
+                    </Pressable>
+                  )}
                 </ScrollView>
+                {photoError ? (
+                  <Text style={styles.photoError}>{photoError}</Text>
+                ) : null}
               </View>
 
               {/* Caption */}
@@ -363,6 +430,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', gap: 4,
   },
   addPhotoBtnText: { color: colors.textTertiary, fontSize: 11 },
+  photoError: { color: colors.accent, fontSize: 12, marginTop: 6 },
   // Caption
   input: {
     backgroundColor: colors.surface2,

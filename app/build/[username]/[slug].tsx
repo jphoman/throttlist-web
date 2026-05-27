@@ -592,6 +592,7 @@ export default function BuildProfileScreen() {
             await updatePost(editingPost.id, {
               caption: updates.caption,
               linked_products: updates.linkedProducts,
+              photos: updates.photos,
             })
             queryClient.invalidateQueries({ queryKey: ['build-profile', username, slug] })
           }}

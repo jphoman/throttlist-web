@@ -571,13 +571,16 @@ export async function updatePost(postId: string, updates: {
   taggedPartIds?: string[]
   isPinned?: boolean
   linked_products?: object[]
+  photos?: string[]
 }): Promise<void> {
   const patch: Record<string, unknown> = {}
   if (updates.caption !== undefined) patch.caption = updates.caption
   if (updates.taggedPartIds !== undefined) patch.tagged_part_ids = updates.taggedPartIds
   if (updates.isPinned !== undefined) patch.is_pinned = updates.isPinned
   if (updates.linked_products !== undefined) patch.linked_products = updates.linked_products
-  await supabase.from('posts').update(patch).eq('id', postId)
+  if (updates.photos !== undefined) patch.photos = updates.photos
+  const { error } = await supabase.from('posts').update(patch).eq('id', postId)
+  if (error) throw error
 }
 
 export async function deletePost(postId: string): Promise<void> {
