@@ -10,7 +10,7 @@ create table if not exists product_tags (
   user_id           uuid        references profiles(id) on delete cascade not null,
   build_id          uuid        references builds(id)   on delete set null,
   post_id           uuid        references posts(id)    on delete set null,
-  tracking_id       text        not null,
+  tracking_id       text        not null unique,
   product_url       text        not null,
   affiliate_url     text        not null,
   product_title     text        not null,
