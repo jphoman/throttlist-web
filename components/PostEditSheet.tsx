@@ -365,6 +365,7 @@ export default function PostEditSheet({
       <ProductSheet
         visible={productSheetOpen}
         userId={userId}
+        buildId={post.buildId || undefined}
         isPro={isPro}
         partCategories={partCategories}
         onConfirm={handleProductConfirm}

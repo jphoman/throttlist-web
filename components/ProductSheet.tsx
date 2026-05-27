@@ -2,6 +2,19 @@
  * ProductSheet — shared bottom-sheet for tagging products in a post.
  * Used identically during post creation (compose) and post editing (PostEditSheet).
  * Edit this ONE file; both surfaces update automatically.
+ *
+ * Tabs
+ * ────
+ *  🔍 Amazon  — opens Amazon search in in-app browser; user copies URL, pastes back
+ *  🔍 Google  — opens Google Shopping in in-app browser; same paste-back flow
+ *  🔗 Link    — paste any product URL directly (existing flow)
+ *  ✍️ Manual  — no URL; for custom / handmade parts (accessible via small link)
+ *
+ * Affiliate tracking
+ * ──────────────────
+ * Every confirmed tag gets a unique tracking ID (tl_{user}_{build}_{rand})
+ * appended as the `ref` param. Amazon links also get tag=throttlist-20.
+ * A row is saved to product_tags in Supabase for future payout attribution.
  */
 import React, { useState, useRef } from 'react'
 import {
@@ -13,88 +26,74 @@ import {
   ScrollView,
   Platform,
   Modal,
-  Linking,
   ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
-import { X, ExternalLink, Tag } from '@/components/Icons'
+import { X, ExternalLink, Tag, Search } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import type { LinkedProduct } from '@/types'
+import { AMAZON_TAG, generateTrackingId, appendAffiliateTag, extractDomain, isAmazonUrl } from '@/lib/affiliateUtils'
+import { saveProductTag } from '@/lib/supabaseQueries'
 
-// ─── Affiliate config ─────────────────────────────────────────────────────────
-const AMAZON_TAG = 'throttlist-20'
+// ─── Types ────────────────────────────────────────────────────────────────────
 
+/** @deprecated Use affiliateUtils.buildTrackingUrl instead — kept for any callers. */
 export function buildTrackingUrl(rawUrl: string, userId: string): string {
-  try {
-    const uid = userId.slice(0, 12)
-    const url = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
-    if (url.hostname.includes('amazon.')) {
-      url.searchParams.set('tag', AMAZON_TAG)
-      url.searchParams.set('ref', `tl_${uid}`)
-    } else {
-      url.searchParams.set('ref', `tl_${uid}`)
-    }
-    return url.toString()
-  } catch {
-    return rawUrl
-  }
+  return appendAffiliateTag(rawUrl, generateTrackingId(userId))
 }
+
+export type SheetMode = 'amazon' | 'google' | 'link' | 'manual'
+
+export interface ProductSheetProps {
+  visible: boolean
+  userId: string
+  buildId?: string
+  isPro: boolean
+  partCategories: string[]
+  onConfirm: (product: Omit<LinkedProduct, 'x' | 'y'>) => void
+  onClose: () => void
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parseUrl(rawUrl: string): { source: 'amazon' | 'web'; domain: string } {
-  try {
-    const url = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
-    const isAmazon = url.hostname.includes('amazon.')
-    const domain = url.hostname.replace(/^www\./, '')
-    return { source: isAmazon ? 'amazon' : 'web', domain }
-  } catch {
-    return { source: 'web', domain: '' }
-  }
+  const domain = extractDomain(rawUrl)
+  return { source: isAmazonUrl(rawUrl) ? 'amazon' : 'web', domain }
 }
 
-/**
- * Immediately extract a readable title from the URL slug — no network needed.
- * Works for Amazon, eBay, RevZilla, and most e-commerce slugs.
- */
+function looksLikeUrl(s: string): boolean {
+  return s.length > 10 && (
+    s.includes('http') || s.includes('www.') || /\.[a-z]{2,}\//.test(s)
+  )
+}
+
 function extractTitleFromUrl(rawUrl: string): string {
   try {
     const url = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
     const { hostname, pathname } = url
-
     const toTitle = (s: string) =>
       s.replace(/[-_+]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim()
-
-    // Amazon: /Product-Slug/dp/ASIN  or  /Product-Slug/gp/product/ASIN
     if (hostname.includes('amazon.')) {
       const m = pathname.match(/^\/([^/]+)\/(?:dp|gp)\//)
       if (m?.[1]) return toTitle(m[1])
     }
-
-    // eBay: /itm/product-slug  or  /itm/product-slug/ITEMID
     if (hostname.includes('ebay.')) {
       const m = pathname.match(/\/itm\/([^/]+)/)
       if (m?.[1]) return toTitle(m[1]).replace(/\s+\d{7,}$/, '').trim()
     }
-
-    // Generic: walk path segments right-to-left, pick the first that looks like
-    // a product name (not a pure number, not a short ID, not a known non-name segment)
     const SKIP = /^(dp|gp|product|products|item|items|p|buy|shop|detail|details|pd|sku|ref|\d+)$/i
     const segments = pathname.split('/').filter(Boolean)
     for (let i = segments.length - 1; i >= 0; i--) {
       const s = segments[i]
       if (s.length > 5 && !SKIP.test(s) && !/^\d+$/.test(s)) {
-        // Strip trailing numeric ID that some sites append to slugs (e.g. "akrapovic-exhaust-12345")
         return toTitle(s.replace(/-\d{4,}$/, ''))
       }
     }
-
     return ''
-  } catch {
-    return ''
-  }
+  } catch { return '' }
 }
 
-/** Strip boilerplate site-name suffixes from a fetched page <title>. */
 function cleanTitle(raw: string): string {
   return raw
     .replace(/^amazon\.com\s*:\s*/i, '')
@@ -104,51 +103,57 @@ function cleanTitle(raw: string): string {
     .trim()
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export type SheetMode = 'link' | 'manual'
-
-export interface ProductSheetProps {
-  visible: boolean
-  userId: string
-  isPro: boolean
-  partCategories: string[]
-  onConfirm: (product: Omit<LinkedProduct, 'x' | 'y'>) => void
-  onClose: () => void
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ProductSheet({
   visible,
   userId,
+  buildId,
   isPro,
   partCategories,
   onConfirm,
   onClose,
 }: ProductSheetProps) {
   const [mode, setMode] = useState<SheetMode>('link')
+
+  // Search state (amazon / google tabs)
   const [searchQuery, setSearchQuery] = useState('')
+  const [browserOpened, setBrowserOpened] = useState(false)
+
+  // URL / confirm state (link, amazon, google)
   const [pastedUrl, setPastedUrl] = useState('')
-  const [title, setTitle] = useState('')
-  const [category, setCategory] = useState('')
-  const [urlStep, setUrlStep] = useState<'search' | 'confirm'>('search')
   const [urlInfo, setUrlInfo] = useState<{ source: 'amazon' | 'web'; domain: string } | null>(null)
+  const [urlStep, setUrlStep] = useState<'input' | 'confirm'>('input')
   const [fetchingTitle, setFetchingTitle] = useState(false)
 
-  // Ref: true when user has manually typed in the title field — prevents auto-fetch from overwriting
+  // Shared confirm state
+  const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('')
+
   const userEditedTitleRef = useRef(false)
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ─── Reset ──────────────────────────────────────────────────────────────────
+
   function reset() {
     setSearchQuery('')
+    setBrowserOpened(false)
     setPastedUrl('')
+    setUrlInfo(null)
+    setUrlStep('input')
+    setFetchingTitle(false)
     setTitle('')
     setCategory('')
-    setUrlStep('search')
-    setUrlInfo(null)
-    setFetchingTitle(false)
     userEditedTitleRef.current = false
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
   }
+
+  function switchMode(m: SheetMode) {
+    setMode(m)
+    reset()
+  }
+
+  // ─── URL processing (shared by all URL-based tabs) ───────────────────────────
 
   async function fetchTitleFromUrl(url: string) {
     setFetchingTitle(true)
@@ -157,72 +162,92 @@ export default function ProductSheet({
       const data = await res.json()
       if (data.status === 'success' && data.data?.title) {
         const fetched = cleanTitle(data.data.title)
-        if (fetched && !userEditedTitleRef.current) {
-          setTitle(fetched)
-        }
+        if (fetched && !userEditedTitleRef.current) setTitle(fetched)
       }
-    } catch {
-      // silently fail — user can type title manually
-    } finally {
+    } catch { /* silently fail */ } finally {
       setFetchingTitle(false)
     }
   }
 
   function handleUrlChange(text: string) {
     setPastedUrl(text)
-    // Reset manual-edit flag whenever the URL changes
     userEditedTitleRef.current = false
-
-    const looksLikeUrl = text.length > 10 && (
-      text.includes('http') || text.includes('www.') || /\.[a-z]{2,}\//.test(text)
-    )
-
-    if (looksLikeUrl) {
+    if (looksLikeUrl(text)) {
       const info = parseUrl(text)
       setUrlInfo(info)
       if (info.domain) setUrlStep('confirm')
-
-      // ① Instant title from URL slug — zero network, works immediately
       const slugTitle = extractTitleFromUrl(text)
       if (slugTitle) setTitle(slugTitle)
-
-      // ② Microlink fetch as secondary enhancement (debounced 800ms)
-      //    Overwrites slug title only if user hasn't manually edited yet
       if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
       fetchTimerRef.current = setTimeout(() => fetchTitleFromUrl(text), 800)
     } else {
       setUrlInfo(null)
-      setUrlStep('search')
+      setUrlStep('input')
       setTitle('')
       setFetchingTitle(false)
       if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
     }
   }
 
-  function handleTitleChange(text: string) {
-    setTitle(text)
-    userEditedTitleRef.current = true
+  // ─── Amazon / Google search open ─────────────────────────────────────────────
+
+  async function handleOpenSearch() {
+    const q = encodeURIComponent(searchQuery.trim() || 'parts accessories')
+    const url = mode === 'amazon'
+      ? `https://www.amazon.com/s?k=${q}&tag=${AMAZON_TAG}`
+      : `https://www.google.com/search?tbm=shop&q=${q}`
+    await WebBrowser.openBrowserAsync(url)
+    setBrowserOpened(true)
+
+    // On web, try reading clipboard automatically after browser closes.
+    // This only works if the user has already granted clipboard-read permission.
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      try {
+        const clip = await navigator.clipboard.readText()
+        if (clip && looksLikeUrl(clip)) handleUrlChange(clip)
+      } catch { /* permission not granted — user will paste manually */ }
+    }
   }
 
-  function handleOpenAmazon() {
-    const q = encodeURIComponent(searchQuery || 'parts accessories')
-    WebBrowser.openBrowserAsync(`https://www.amazon.com/s?k=${q}&tag=${AMAZON_TAG}`)
-  }
+  // ─── Confirm ──────────────────────────────────────────────────────────────────
 
   function handleConfirm() {
     if (!title.trim()) return
-    if (mode === 'link' && !pastedUrl.trim()) return
+    const isManual = mode === 'manual'
+    if (!isManual && !pastedUrl.trim()) return
+
+    const trackingId = generateTrackingId(userId, buildId)
+    const raw = isManual ? '' : pastedUrl.trim()
+    const affiliateUrl = isManual ? '' : appendAffiliateTag(raw, trackingId)
+    const domain = isManual ? undefined : (urlInfo?.domain || extractDomain(raw) || undefined)
+    const source: LinkedProduct['source'] = isManual ? 'manual' : (urlInfo?.source ?? 'web')
 
     const product: Omit<LinkedProduct, 'x' | 'y'> = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title: title.trim(),
-      brand: mode === 'link' ? (urlInfo?.domain ?? undefined) : undefined,
-      rawUrl: mode === 'link' ? pastedUrl.trim() : '',
-      trackingUrl: mode === 'link' ? buildTrackingUrl(pastedUrl.trim(), userId) : '',
-      source: mode === 'manual' ? 'manual' : (urlInfo?.source ?? 'web'),
+      brand: domain,
+      rawUrl: raw,
+      trackingUrl: affiliateUrl,
+      source,
       category: category || undefined,
     }
+
     onConfirm(product)
+
+    // Fire-and-forget analytics save — never blocks the UI
+    if (!isManual && raw) {
+      saveProductTag({
+        userId,
+        buildId,
+        trackingId,
+        productUrl: raw,
+        affiliateUrl,
+        productTitle: title.trim(),
+        sourceDomain: domain,
+        category: category || undefined,
+      }).catch(err => console.warn('[ProductSheet] product_tags save failed', err))
+    }
+
     reset()
   }
 
@@ -231,12 +256,9 @@ export default function ProductSheet({
     onClose()
   }
 
-  function switchMode(m: SheetMode) {
-    setMode(m)
-    reset()
-  }
-
   const canConfirm = title.trim().length > 0 && (mode === 'manual' || pastedUrl.trim().length > 0)
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
@@ -252,63 +274,149 @@ export default function ProductSheet({
             </Pressable>
           </View>
 
-          {/* Mode tabs */}
+          {/* 3-tab bar */}
           <View style={sh.modeTabs}>
             <Pressable
-              style={[sh.modeTab, mode === 'link' && sh.modeTabActive]}
-              onPress={() => switchMode('link')}
+              style={[sh.modeTab, mode === 'amazon' && sh.modeTabActive]}
+              onPress={() => switchMode('amazon')}
             >
-              <ExternalLink size={13} color={mode === 'link' ? '#fff' : colors.textSecondary} />
-              <Text style={[sh.modeTabText, mode === 'link' && sh.modeTabTextActive]}>Link Product</Text>
+              <Search size={12} color={mode === 'amazon' ? '#fff' : colors.textSecondary} />
+              <Text style={[sh.modeTabText, mode === 'amazon' && sh.modeTabTextActive]}>Amazon</Text>
             </Pressable>
             <Pressable
-              style={[sh.modeTab, mode === 'manual' && sh.modeTabActive]}
-              onPress={() => switchMode('manual')}
+              style={[sh.modeTab, mode === 'google' && sh.modeTabActive]}
+              onPress={() => switchMode('google')}
             >
-              <Tag size={13} color={mode === 'manual' ? '#fff' : colors.textSecondary} />
-              <Text style={[sh.modeTabText, mode === 'manual' && sh.modeTabTextActive]}>Manual Tag</Text>
+              <Search size={12} color={mode === 'google' ? '#fff' : colors.textSecondary} />
+              <Text style={[sh.modeTabText, mode === 'google' && sh.modeTabTextActive]}>Google</Text>
+            </Pressable>
+            <Pressable
+              style={[sh.modeTab, (mode === 'link' || mode === 'manual') && sh.modeTabActive]}
+              onPress={() => switchMode('link')}
+            >
+              <ExternalLink size={12} color={(mode === 'link' || mode === 'manual') ? '#fff' : colors.textSecondary} />
+              <Text style={[sh.modeTabText, (mode === 'link' || mode === 'manual') && sh.modeTabTextActive]}>Link</Text>
             </Pressable>
           </View>
 
-          {/* Pro upsell banner — only for non-pro users */}
+          {/* Pro upsell */}
           {!isPro && (
             <Pressable
               style={sh.proBanner}
               onPress={() => { handleClose(); router.push('/pro-signup') }}
             >
               <Text style={sh.proBannerText}>
-                Pro users can earn commission on tags —{' '}
-                <Text style={sh.proBannerLink}>sign up now</Text>
+                Pro users earn commission on every product tag —{' '}
+                <Text style={sh.proBannerLink}>upgrade now</Text>
               </Text>
             </Pressable>
           )}
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-            {/* ── LINK mode ── */}
-            {mode === 'link' && (
+            {/* ── AMAZON / GOOGLE search tabs ── */}
+            {(mode === 'amazon' || mode === 'google') && (
               <>
-                <View style={sh.section}>
-                  <Text style={sh.sectionLabel}>SEARCH</Text>
-                  <View style={sh.row}>
+                {!browserOpened ? (
+                  /* Phase 1 — search + open browser */
+                  <View style={sh.section}>
+                    <Text style={sh.sectionLabel}>
+                      {mode === 'amazon' ? 'SEARCH AMAZON' : 'SEARCH GOOGLE SHOPPING'}
+                    </Text>
+                    <View style={sh.searchRow}>
+                      <TextInput
+                        style={[sh.input, { flex: 1 }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                        placeholder={mode === 'amazon' ? 'e.g. SC Project exhaust, SHOEI helmet…' : 'e.g. Biltwell grips, RevZilla jacket…'}
+                        placeholderTextColor={colors.textTertiary}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        returnKeyType="search"
+                        onSubmitEditing={handleOpenSearch}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <Pressable
+                        style={[sh.searchBtn, mode === 'google' && sh.searchBtnGoogle]}
+                        onPress={handleOpenSearch}
+                      >
+                        <Search size={14} color="#fff" />
+                        <Text style={sh.searchBtnText}>
+                          {mode === 'amazon' ? 'Amazon' : 'Google'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                    <Text style={sh.hint}>
+                      {mode === 'amazon'
+                        ? `Opens Amazon with your affiliate tag pre-loaded. Find a product, copy its URL, then come back here.`
+                        : `Opens Google Shopping. Find a product at any retailer, copy the URL, then come back here.`}
+                    </Text>
+                  </View>
+                ) : (
+                  /* Phase 2 — paste URL after browser returned */
+                  <View style={sh.section}>
+                    <View style={sh.returnBanner}>
+                      <Text style={sh.returnBannerTitle}>Found something?</Text>
+                      <Text style={sh.returnBannerHint}>
+                        Copy the product URL from {mode === 'amazon' ? 'Amazon' : 'the product page'} and paste it below.
+                      </Text>
+                    </View>
+                    <Text style={sh.sectionLabel}>PASTE PRODUCT URL</Text>
                     <TextInput
-                      style={[sh.input, { flex: 1 }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-                      placeholder="Product name, brand, model…"
+                      style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                      placeholder="https://www.amazon.com/…"
                       placeholderTextColor={colors.textTertiary}
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      returnKeyType="search"
+                      value={pastedUrl}
+                      onChangeText={handleUrlChange}
                       autoCapitalize="none"
                       autoCorrect={false}
+                      keyboardType="url"
+                      autoFocus
                     />
-                    <Pressable style={sh.amazonBtn} onPress={handleOpenAmazon}>
-                      <ExternalLink size={14} color="#fff" />
-                      <Text style={sh.amazonBtnText}>Amazon</Text>
+                    {urlInfo && (
+                      <View style={sh.urlPreview}>
+                        <View style={[sh.sourceDot, urlInfo.source === 'amazon' && sh.sourceDotAmazon]} />
+                        <Text style={sh.urlDomain}>{urlInfo.domain}</Text>
+                        {urlInfo.source === 'amazon' && (
+                          <View style={sh.affiliatePill}>
+                            <Text style={sh.affiliatePillText}>affiliate tracked</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                    <Pressable onPress={() => { setBrowserOpened(false); setPastedUrl(''); setUrlInfo(null); setUrlStep('input') }} style={sh.searchAgainLink}>
+                      <Text style={sh.searchAgainText}>← Search again</Text>
                     </Pressable>
                   </View>
-                  <Text style={sh.hint}>Opens Amazon in your browser — copy the URL, then paste below.</Text>
-                </View>
+                )}
 
+                {/* Phase 3 — title + category (after URL recognised) */}
+                {urlStep === 'confirm' && (
+                  <View style={sh.section}>
+                    <View style={sh.sectionLabelRow}>
+                      <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
+                      {fetchingTitle && (
+                        <View style={sh.fetchingBadge}>
+                          <ActivityIndicator size="small" color={colors.textTertiary} style={{ transform: [{ scale: 0.65 }] }} />
+                          <Text style={sh.fetchingBadgeText}>fetching…</Text>
+                        </View>
+                      )}
+                    </View>
+                    <TextInput
+                      style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                      placeholder={fetchingTitle ? 'Fetching title…' : 'Enter or edit product name'}
+                      placeholderTextColor={colors.textTertiary}
+                      value={title}
+                      onChangeText={t => { setTitle(t); userEditedTitleRef.current = true }}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ── LINK tab ── */}
+            {mode === 'link' && (
+              <>
                 <View style={sh.section}>
                   <Text style={sh.sectionLabel}>PASTE PRODUCT URL</Text>
                   <TextInput
@@ -350,16 +458,20 @@ export default function ProductSheet({
                       placeholder={fetchingTitle ? 'Fetching title…' : 'Enter or edit product name'}
                       placeholderTextColor={colors.textTertiary}
                       value={title}
-                      onChangeText={handleTitleChange}
+                      onChangeText={t => { setTitle(t); userEditedTitleRef.current = true }}
                       autoCapitalize="words"
                     />
                   </View>
                 )}
 
+                {/* Manual fallback link */}
+                <Pressable onPress={() => switchMode('manual')} style={sh.manualFallbackLink}>
+                  <Text style={sh.manualFallbackText}>Tagging a custom or handmade part? → Add without URL</Text>
+                </Pressable>
               </>
             )}
 
-            {/* ── MANUAL mode ── */}
+            {/* ── MANUAL tab ── */}
             {mode === 'manual' && (
               <>
                 <View style={sh.section}>
@@ -378,11 +490,14 @@ export default function ProductSheet({
                     Use this for custom fabrication, one-off parts, vintage finds, or anything without a purchase link.
                   </Text>
                 </View>
+                <Pressable onPress={() => switchMode('link')} style={sh.manualFallbackLink}>
+                  <Text style={sh.manualFallbackText}>← Back to paste URL</Text>
+                </Pressable>
               </>
             )}
 
-            {/* ── Category picker (both modes) ── */}
-            {partCategories.length > 0 && (
+            {/* Category picker (all modes except initial search phase) */}
+            {partCategories.length > 0 && (mode === 'manual' || mode === 'link' || urlStep === 'confirm') && (
               <View style={sh.section}>
                 <Text style={sh.sectionLabel}>CATEGORY</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sh.catRow}>
@@ -401,17 +516,19 @@ export default function ProductSheet({
               </View>
             )}
 
-            {/* Confirm */}
-            <Pressable
-              style={[sh.confirmBtn, !canConfirm && sh.confirmBtnDim]}
-              onPress={handleConfirm}
-              disabled={!canConfirm}
-            >
-              <Tag size={16} color="#fff" />
-              <Text style={sh.confirmBtnText}>
-                {mode === 'manual' ? 'Add Manual Tag' : 'Tag This Product'}
-              </Text>
-            </Pressable>
+            {/* Confirm button */}
+            {(mode === 'manual' || mode === 'link' || urlStep === 'confirm') && (
+              <Pressable
+                style={[sh.confirmBtn, !canConfirm && sh.confirmBtnDim]}
+                onPress={handleConfirm}
+                disabled={!canConfirm}
+              >
+                <Tag size={16} color="#fff" />
+                <Text style={sh.confirmBtnText}>
+                  {mode === 'manual' ? 'Add Manual Tag' : 'Tag This Product'}
+                </Text>
+              </Pressable>
+            )}
           </ScrollView>
         </Pressable>
       </Pressable>
@@ -419,7 +536,7 @@ export default function ProductSheet({
   )
 }
 
-// ─── Styles (exported so ProductTagList can import source-badge styles) ────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 export const sh = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: {
@@ -461,12 +578,12 @@ export const sh = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     paddingVertical: 8,
     borderRadius: 8,
   },
   modeTabActive: { backgroundColor: colors.accent },
-  modeTabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  modeTabText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
   modeTabTextActive: { color: '#fff' },
   proBanner: {
     marginHorizontal: 20,
@@ -484,11 +601,7 @@ export const sh = StyleSheet.create({
     lineHeight: 18,
     textAlign: 'center',
   },
-  proBannerLink: {
-    color: '#FF6666',
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
+  proBannerLink: { color: '#FF6666', fontWeight: '700', textDecorationLine: 'underline' },
   section: { paddingHorizontal: 20, paddingTop: 16 },
   sectionLabel: {
     color: colors.textTertiary,
@@ -503,19 +616,10 @@ export const sh = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  fetchingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  fetchingBadgeText: {
-    color: colors.textTertiary,
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  row: { flexDirection: 'row', gap: 8 },
+  fetchingBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  fetchingBadgeText: { color: colors.textTertiary, fontSize: 10, fontWeight: '500' },
+  searchRow: { flexDirection: 'row', gap: 8 },
   input: {
-    flex: 1,
     backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
@@ -526,7 +630,7 @@ export const sh = StyleSheet.create({
     fontSize: 14,
   },
   fullInput: { flex: 0, width: '100%' },
-  amazonBtn: {
+  searchBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -536,8 +640,19 @@ export const sh = StyleSheet.create({
     paddingVertical: 10,
     flexShrink: 0,
   },
-  amazonBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  searchBtnGoogle: { backgroundColor: '#4285F4' },
+  searchBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   hint: { color: colors.textTertiary, fontSize: 11, marginTop: 7, lineHeight: 16 },
+  returnBanner: {
+    backgroundColor: colors.surface2,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  returnBannerTitle: { color: colors.textPrimary, fontSize: 13, fontWeight: '700', marginBottom: 2 },
+  returnBannerHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
   urlPreview: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -556,6 +671,10 @@ export const sh = StyleSheet.create({
     borderColor: colors.accent + '55',
   },
   affiliatePillText: { color: colors.accent, fontSize: 10, fontWeight: '600' },
+  searchAgainLink: { marginTop: 10 },
+  searchAgainText: { color: colors.textTertiary, fontSize: 12 },
+  manualFallbackLink: { paddingHorizontal: 20, paddingTop: 10 },
+  manualFallbackText: { color: colors.textTertiary, fontSize: 12 },
   manualNote: {
     marginHorizontal: 20,
     marginTop: 10,

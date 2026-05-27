@@ -344,6 +344,7 @@ export default function ComposeScreen() {
       <ProductSheet
         visible={productSheetOpen}
         userId={userId}
+        buildId={selectedBuildId || undefined}
         isPro={isPro}
         partCategories={partCategories}
         onConfirm={handleProductConfirm}

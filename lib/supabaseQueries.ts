@@ -875,6 +875,40 @@ export async function fetchBuildParts(buildId: string): Promise<Part[]> {
   }))
 }
 
+// ─── Product tag analytics ────────────────────────────────────────────────────
+
+/**
+ * Persist a tagged product to the product_tags analytics table.
+ * Fire-and-forget — call with .catch() so failures never block the UI.
+ *
+ * The linked_products JSONB on the post row remains the source of truth
+ * for the app UI; this table powers future payout / attribution reporting.
+ */
+export async function saveProductTag(tag: {
+  userId: string
+  buildId?: string
+  postId?: string
+  trackingId: string
+  productUrl: string
+  affiliateUrl: string
+  productTitle: string
+  sourceDomain?: string
+  category?: string
+}): Promise<void> {
+  const { error } = await supabase.from('product_tags').insert({
+    user_id:       tag.userId,
+    build_id:      tag.buildId ?? null,
+    post_id:       tag.postId ?? null,
+    tracking_id:   tag.trackingId,
+    product_url:   tag.productUrl,
+    affiliate_url: tag.affiliateUrl,
+    product_title: tag.productTitle,
+    source_domain: tag.sourceDomain ?? null,
+    category:      tag.category ?? null,
+  })
+  if (error) throw error
+}
+
 export async function fetchBuildFollowers(buildId: string): Promise<User[]> {
   const { data, error } = await supabase
     .from('build_follows')
