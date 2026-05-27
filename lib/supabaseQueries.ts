@@ -184,17 +184,26 @@ export async function createBuild(build: {
 
 export async function updateBuild(buildId: string, updates: {
   nickname?: string
-  tags?: string[]
   status?: string
   cover_photo_url?: string
 }): Promise<void> {
   const patch: Record<string, unknown> = {}
   if (updates.nickname !== undefined) patch.nickname = updates.nickname
-  if (updates.tags !== undefined) patch.tags = updates.tags
   if (updates.status !== undefined) patch.status = updates.status
   if (updates.cover_photo_url !== undefined) patch.cover_photo_url = updates.cover_photo_url
-  const { error } = await supabase.from('builds').update(patch).eq('id', buildId)
+  // Guard: nothing to update
+  if (Object.keys(patch).length === 0) return
+  // Use .select('id') so we can detect when RLS silently blocks the write
+  // (without .select(), Supabase v2 returns { data: null, error: null } on 0 rows updated)
+  const { data, error } = await supabase
+    .from('builds')
+    .update(patch)
+    .eq('id', buildId)
+    .select('id')
   if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error('Update failed: build not found or permission denied. Please refresh and try again.')
+  }
 }
 
 // ─── Post queries ─────────────────────────────────────────────────────────────
@@ -579,8 +588,12 @@ export async function updatePost(postId: string, updates: {
   if (updates.isPinned !== undefined) patch.is_pinned = updates.isPinned
   if (updates.linked_products !== undefined) patch.linked_products = updates.linked_products
   if (updates.photos !== undefined) patch.photos = updates.photos
-  const { error } = await supabase.from('posts').update(patch).eq('id', postId)
+  if (Object.keys(patch).length === 0) return
+  const { data, error } = await supabase.from('posts').update(patch).eq('id', postId).select('id')
   if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error('Update failed: post not found or permission denied.')
+  }
 }
 
 export async function deletePost(postId: string): Promise<void> {
