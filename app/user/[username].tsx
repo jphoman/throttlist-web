@@ -240,18 +240,34 @@ export default function UserProfileScreen() {
         {/* ── Top Builds ── */}
         {topBuilds.length > 0 && (
           <View style={styles.topBuildsSection}>
-            <Text style={styles.sectionLabel}>Top Builds</Text>
-            {topBuilds.map(build => (
-              <View key={build.id} style={styles.buildItemWrap}>
-                <BuildCard
-                  build={build}
-                  showFollowButton={!isOwner}
-                  isFollowing={followedBuildIds.has(build.id)}
-                  onFollow={() => handleFollowBuild(build.id)}
+            <Text style={[styles.sectionLabel, { paddingHorizontal: 16 }]}>Top Builds</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.topBuildsRow}
+            >
+              {topBuilds.map(build => (
+                <Pressable
+                  key={build.id}
+                  style={styles.topBuildItem}
                   onPress={() => build.username && router.push(`/build/${build.username}/${build.slug}`)}
-                />
-              </View>
-            ))}
+                >
+                  <View style={styles.topBuildCircle}>
+                    {build.coverPhotoUrl ? (
+                      <Image source={{ uri: build.coverPhotoUrl }} style={styles.topBuildPhoto} />
+                    ) : (
+                      <View style={[styles.topBuildPhoto, styles.topBuildPhotoFallback]} />
+                    )}
+                  </View>
+                  <Text style={styles.topBuildName} numberOfLines={1}>
+                    {build.nickname || `${build.year} ${build.make}`}
+                  </Text>
+                  <Text style={styles.topBuildUsername} numberOfLines={1}>
+                    @{build.username}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         )}
 
@@ -431,11 +447,48 @@ const styles = StyleSheet.create({
 
   // Top Builds + Builds
   topBuildsSection: {
-    paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    paddingBottom: 8,
+  },
+  topBuildsRow: {
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  topBuildItem: {
+    alignItems: 'center',
+    width: 80,
+  },
+  topBuildCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.surface3,
+    marginBottom: 6,
+  },
+  topBuildPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  topBuildPhotoFallback: {
+    backgroundColor: colors.surface2,
+  },
+  topBuildName: {
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    width: '100%',
+  },
+  topBuildUsername: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    textAlign: 'center',
+    marginTop: 1,
+    width: '100%',
   },
   buildsSectionHeader: { paddingHorizontal: 16, paddingTop: 16 },
   buildItemWrap: { paddingHorizontal: 16 },
