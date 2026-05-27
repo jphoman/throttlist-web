@@ -35,6 +35,7 @@ export default function PostDetailScreen() {
   const [editSheetOpen, setEditSheetOpen] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
   const [localCaption, setLocalCaption] = useState<string | null>(null)
+  const [localPhotos, setLocalPhotos] = useState<string[] | null>(null)
   const [deleted, setDeleted] = useState(false)
   const [tagsSheetOpen, setTagsSheetOpen] = useState(false)
 
@@ -77,7 +78,7 @@ export default function PostDetailScreen() {
 
   const isOwner = post.userId === authUser?.id
   const displayCaption = localCaption ?? post.caption
-  const photos: string[] = (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
+  const photos: string[] = localPhotos ?? (() => { try { return JSON.parse(post.photos) } catch { return [] } })()
   const linkedProducts: import('@/types').LinkedProduct[] = (() => { try { return JSON.parse(post.linkedProducts) } catch { return [] } })()
 
   const topComments = [...fetchedComments]
@@ -401,9 +402,11 @@ export default function PostDetailScreen() {
           onClose={() => setEditSheetOpen(false)}
           onSave={async (updates) => {
             setLocalCaption(updates.caption)
+            setLocalPhotos(updates.photos)
             await updatePost(post.id, {
               caption: updates.caption,
               linked_products: updates.linkedProducts,
+              photos: updates.photos,
             })
             queryClient.invalidateQueries({ queryKey: ['post', postId] })
           }}
