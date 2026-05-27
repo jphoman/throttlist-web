@@ -180,6 +180,7 @@ export default function ProductSheet({
   function handleUrlChange(text: string) {
     setPastedUrl(text)
     userEditedTitleRef.current = false
+    setProductImage(null) // clear stale image whenever the URL changes
     if (looksLikeUrl(text)) {
       const info = parseUrl(text)
       setUrlInfo(info)
