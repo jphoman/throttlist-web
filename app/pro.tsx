@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   Platform,
+  Animated,
 } from 'react-native'
 import { router } from 'expo-router'
 import {
@@ -29,6 +30,22 @@ const INCLUDED = [
 
 export default function ProScreen() {
   const insets = useSafeAreaInsets()
+  const scale = useRef(new Animated.Value(1)).current
+
+  useEffect(() => {
+    const beat = () => {
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.22, duration: 110, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1,    duration: 110, useNativeDriver: true }),
+        Animated.delay(120),
+        Animated.timing(scale, { toValue: 1.14, duration: 100, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1,    duration: 100, useNativeDriver: true }),
+      ]).start()
+    }
+    beat()
+    const id = setInterval(beat, 8000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -44,7 +61,9 @@ export default function ProScreen() {
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.starCircle}>
-            <ProBadge size={48} />
+            <Animated.View style={{ transform: [{ scale }] }}>
+              <ProBadge size={48} />
+            </Animated.View>
           </View>
           <Text style={styles.heroTitle}>Get paid to build.</Text>
           <Text style={styles.heroSub}>
