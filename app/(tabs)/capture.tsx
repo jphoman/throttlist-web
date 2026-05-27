@@ -337,6 +337,7 @@ export default function CaptureScreen() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              zIndex: 10,
             }}
           >
             <Gallery size={28} color="#fff" />
@@ -424,13 +425,15 @@ const styles = StyleSheet.create({
     bottom: Platform.OS === 'ios' ? 56 : 36,
     left: 32,
     padding: 8,
+    zIndex: 10,
   },
   shutter: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
     alignSelf: 'center',
-    left: 0, right: 0,
+    width: 76,          // constrain hit area to the circle — not full-width
     alignItems: 'center',
+    zIndex: 5,
   },
   shutterInner: {
     width: 76, height: 76, borderRadius: 38,
