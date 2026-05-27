@@ -40,6 +40,8 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
   const [selectedCoverUrl, setSelectedCoverUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (visible) {
@@ -49,6 +51,7 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
       setIsPrivate(build.status === 'private')
       setSelectedCoverUrl(null) // reset selection each time sheet opens
       setUploadError(null)
+      setSaveError(null)
     }
   }, [visible, build])
 
@@ -105,14 +108,23 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
     setTags(prev => prev.filter(t => t !== tag))
   }
 
-  function handleSave() {
-    onSave({
-      nickname: nickname.trim(),
-      tags,
-      isPrivate,
-      ...(selectedCoverUrl ? { coverPhotoUrl: selectedCoverUrl } : {}),
-    })
-    onClose()
+  async function handleSave() {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await onSave({
+        nickname: nickname.trim(),
+        tags,
+        isPrivate,
+        ...(selectedCoverUrl ? { coverPhotoUrl: selectedCoverUrl } : {}),
+      })
+      onClose()
+    } catch (err: any) {
+      console.error('Save failed', err)
+      setSaveError(err?.message ?? 'Save failed. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const displayCoverUrl = selectedCoverUrl || build.coverPhotoUrl || null
@@ -345,17 +357,20 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
             </ScrollView>
 
             {/* Save */}
+            {saveError ? (
+              <Text style={styles.saveError}>{saveError}</Text>
+            ) : null}
             <View style={styles.footer}>
-              <Pressable style={styles.cancelBtn} onPress={onClose}>
+              <Pressable style={styles.cancelBtn} onPress={onClose} disabled={saving}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.saveBtn, uploading && { opacity: 0.5 }]}
+                style={[styles.saveBtn, (uploading || saving) && { opacity: 0.5 }]}
                 onPress={handleSave}
-                disabled={uploading}
+                disabled={uploading || saving}
               >
                 <Text style={styles.saveBtnText}>
-                  {uploading ? 'Uploading…' : 'Save Changes'}
+                  {uploading ? 'Uploading…' : saving ? 'Saving…' : 'Save Changes'}
                 </Text>
               </Pressable>
             </View>
@@ -618,6 +633,13 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.textPrimary,
     fontSize: 14,
+  },
+  saveError: {
+    color: colors.accent,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 10,
   },
   // Footer
   footer: {

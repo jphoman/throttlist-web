@@ -511,14 +511,12 @@ export default function BuildProfileScreen() {
           setLocalBuildOverrides(prev => ({
             ...prev,
             ...(updates.nickname !== undefined ? { nickname: updates.nickname } : {}),
-            ...(updates.tags !== undefined ? { tags: updates.tags } : {}),
             ...(updates.isPrivate !== undefined ? { isPrivate: updates.isPrivate } : {}),
             ...(updates.coverPhotoUrl ? { coverPhotoUrl: updates.coverPhotoUrl } : {}),
           }))
-          // Persist to DB
+          // Persist to DB — do NOT send tags (column type mismatch; tags not yet read from DB)
           await updateBuild(build.id, {
             ...(updates.nickname !== undefined ? { nickname: updates.nickname } : {}),
-            ...(updates.tags !== undefined ? { tags: updates.tags } : {}),
             ...(updates.isPrivate !== undefined ? { status: updates.isPrivate ? 'private' : 'active' } : {}),
             ...(updates.coverPhotoUrl ? { cover_photo_url: updates.coverPhotoUrl } : {}),
           })
