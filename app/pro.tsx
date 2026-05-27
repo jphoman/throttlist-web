@@ -92,15 +92,14 @@ export default function ProScreen() {
         {/* Pricing */}
         <View style={styles.pricingCard}>
           <View style={styles.pricingTop}>
-            <View>
+            <View style={styles.priceRow}>
               <Text style={styles.price}>$5</Text>
               <Text style={styles.pricePer}>/month</Text>
             </View>
-            <ProBadge size={27} />
+            <Text style={styles.pricingNote}>
+              Cancel any time.{'\n'}First month free{'\n'}for Beta users.
+            </Text>
           </View>
-          <Text style={styles.pricingNote}>
-            Cancel any time. First month free for Beta users.
-          </Text>
         </View>
 
         {/* What's included */}
@@ -219,7 +218,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
   },
   price: {
     color: colors.textPrimary,
@@ -246,6 +249,8 @@ const styles = StyleSheet.create({
   pricingNote: {
     color: colors.textTertiary,
     fontSize: 12,
+    textAlign: 'right',
+    lineHeight: 18,
   },
   sectionTitle: {
     color: colors.textPrimary,
