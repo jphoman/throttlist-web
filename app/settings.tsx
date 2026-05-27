@@ -69,8 +69,10 @@ export default function SettingsScreen() {
     const builds = await fetchUserBuilds(userId)
     const buildItems: Extract<OrderItem, { type: 'build' }>[] = builds
       .map(b => ({ type: 'build' as const, id: b.id, nickname: b.nickname, year: b.year, make: b.make, model: b.model }))
-    // Always include Top Builds and Store as moveable section blocks
-    setProfileOrder([{ type: 'topBuilds' }, ...buildItems, { type: 'store' }])
+    // Only include Store block for Pro users
+    const order: OrderItem[] = [{ type: 'topBuilds' }, ...buildItems]
+    if (isPro) order.push({ type: 'store' })
+    setProfileOrder(order)
     setSection('reorderProfile')
   }
 
