@@ -213,14 +213,15 @@ export default function ProductSheet({
 
   function handleConfirm() {
     if (!title.trim()) return
-    const isManual = mode === 'manual'
-    if (!isManual && !pastedUrl.trim()) return
+
+    // Link/manual tabs both allow an empty URL — treat any empty-URL submission as 'manual'
+    const isUrlless = mode === 'manual' || ((mode === 'link') && !pastedUrl.trim())
 
     const trackingId = generateTrackingId(userId, buildId)
-    const raw = isManual ? '' : pastedUrl.trim()
-    const affiliateUrl = isManual ? '' : appendAffiliateTag(raw, trackingId)
-    const domain = isManual ? undefined : (urlInfo?.domain || extractDomain(raw) || undefined)
-    const source: LinkedProduct['source'] = isManual ? 'manual' : (urlInfo?.source ?? 'web')
+    const raw = isUrlless ? '' : pastedUrl.trim()
+    const affiliateUrl = isUrlless ? '' : appendAffiliateTag(raw, trackingId)
+    const domain = isUrlless ? undefined : (urlInfo?.domain || extractDomain(raw) || undefined)
+    const source: LinkedProduct['source'] = isUrlless ? 'manual' : (urlInfo?.source ?? 'web')
 
     const product: Omit<LinkedProduct, 'x' | 'y'> = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -235,7 +236,7 @@ export default function ProductSheet({
     onConfirm(product)
 
     // Fire-and-forget analytics save — never blocks the UI
-    if (!isManual && raw) {
+    if (!isUrlless && raw) {
       saveProductTag({
         userId,
         buildId,
@@ -256,7 +257,9 @@ export default function ProductSheet({
     onClose()
   }
 
-  const canConfirm = title.trim().length > 0 && (mode === 'manual' || pastedUrl.trim().length > 0)
+  // For the Manual tab (link/manual modes), URL is optional — only title is required.
+  // For Amazon/Google tabs, a URL must be recognised before confirm is allowed (urlStep === 'confirm').
+  const canConfirm = title.trim().length > 0
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -294,13 +297,13 @@ export default function ProductSheet({
               style={[sh.modeTab, (mode === 'link' || mode === 'manual') && sh.modeTabActive]}
               onPress={() => switchMode('link')}
             >
-              <ExternalLink size={12} color={(mode === 'link' || mode === 'manual') ? '#fff' : colors.textSecondary} />
-              <Text style={[sh.modeTabText, (mode === 'link' || mode === 'manual') && sh.modeTabTextActive]}>Link</Text>
+              <Tag size={12} color={(mode === 'link' || mode === 'manual') ? '#fff' : colors.textSecondary} />
+              <Text style={[sh.modeTabText, (mode === 'link' || mode === 'manual') && sh.modeTabTextActive]}>Manual</Text>
             </Pressable>
           </View>
 
-          {/* Pro upsell */}
-          {!isPro && (
+          {/* Pro upsell — shown only on search tabs, not Manual */}
+          {!isPro && (mode === 'amazon' || mode === 'google') && (
             <Pressable
               style={sh.proBanner}
               onPress={() => { handleClose(); router.push('/pro-signup') }}
@@ -414,11 +417,34 @@ export default function ProductSheet({
               </>
             )}
 
-            {/* ── LINK tab ── */}
-            {mode === 'link' && (
+            {/* ── MANUAL tab (formerly Link) ── */}
+            {/* Title is the primary field; URL is optional for affiliate tracking */}
+            {(mode === 'link' || mode === 'manual') && (
               <>
+                {/* Item Description — always shown, required */}
                 <View style={sh.section}>
-                  <Text style={sh.sectionLabel}>PASTE PRODUCT URL</Text>
+                  <View style={sh.sectionLabelRow}>
+                    <Text style={sh.sectionLabel}>ITEM DESCRIPTION</Text>
+                    {fetchingTitle && (
+                      <View style={sh.fetchingBadge}>
+                        <ActivityIndicator size="small" color={colors.textTertiary} style={{ transform: [{ scale: 0.65 }] }} />
+                        <Text style={sh.fetchingBadgeText}>fetching…</Text>
+                      </View>
+                    )}
+                  </View>
+                  <TextInput
+                    style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                    placeholder="Product name, brand, model…"
+                    placeholderTextColor={colors.textTertiary}
+                    value={title}
+                    onChangeText={t => { setTitle(t); userEditedTitleRef.current = true }}
+                    autoCapitalize="words"
+                  />
+                </View>
+
+                {/* Product URL — optional */}
+                <View style={sh.section}>
+                  <Text style={sh.sectionLabel}>PRODUCT URL (OPTIONAL)</Text>
                   <TextInput
                     style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
                     placeholder="https://www.amazon.com/…"
@@ -441,58 +467,6 @@ export default function ProductSheet({
                     </View>
                   )}
                 </View>
-
-                {urlStep === 'confirm' && (
-                  <View style={sh.section}>
-                    <View style={sh.sectionLabelRow}>
-                      <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
-                      {fetchingTitle && (
-                        <View style={sh.fetchingBadge}>
-                          <ActivityIndicator size="small" color={colors.textTertiary} style={{ transform: [{ scale: 0.65 }] }} />
-                          <Text style={sh.fetchingBadgeText}>fetching…</Text>
-                        </View>
-                      )}
-                    </View>
-                    <TextInput
-                      style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-                      placeholder={fetchingTitle ? 'Fetching title…' : 'Enter or edit product name'}
-                      placeholderTextColor={colors.textTertiary}
-                      value={title}
-                      onChangeText={t => { setTitle(t); userEditedTitleRef.current = true }}
-                      autoCapitalize="words"
-                    />
-                  </View>
-                )}
-
-                {/* Manual fallback link */}
-                <Pressable onPress={() => switchMode('manual')} style={sh.manualFallbackLink}>
-                  <Text style={sh.manualFallbackText}>Tagging a custom or handmade part? → Add without URL</Text>
-                </Pressable>
-              </>
-            )}
-
-            {/* ── MANUAL tab ── */}
-            {mode === 'manual' && (
-              <>
-                <View style={sh.section}>
-                  <Text style={sh.sectionLabel}>PRODUCT / PART NAME</Text>
-                  <TextInput
-                    style={[sh.input, sh.fullInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
-                    placeholder="e.g. Custom powder coat, Vintage seat, Hand-stitched grips…"
-                    placeholderTextColor={colors.textTertiary}
-                    value={title}
-                    onChangeText={setTitle}
-                    autoCapitalize="words"
-                  />
-                </View>
-                <View style={sh.manualNote}>
-                  <Text style={sh.manualNoteText}>
-                    Use this for custom fabrication, one-off parts, vintage finds, or anything without a purchase link.
-                  </Text>
-                </View>
-                <Pressable onPress={() => switchMode('link')} style={sh.manualFallbackLink}>
-                  <Text style={sh.manualFallbackText}>← Back to paste URL</Text>
-                </Pressable>
               </>
             )}
 
@@ -524,9 +498,7 @@ export default function ProductSheet({
                 disabled={!canConfirm}
               >
                 <Tag size={16} color="#fff" />
-                <Text style={sh.confirmBtnText}>
-                  {mode === 'manual' ? 'Add Manual Tag' : 'Tag This Product'}
-                </Text>
+                <Text style={sh.confirmBtnText}>Tag This Product</Text>
               </Pressable>
             )}
           </ScrollView>
