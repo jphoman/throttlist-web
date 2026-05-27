@@ -77,7 +77,7 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
     setUploading(true)
     try {
       const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
-      const path = `covers/${userId || 'anon'}/${Date.now()}.${ext}`
+      const path = `${userId}/covers/${Date.now()}.${ext}`
       const { error } = await supabase.storage
         .from('posts')
         .upload(path, file, { contentType: file.type, upsert: true })

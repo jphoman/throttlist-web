@@ -73,7 +73,7 @@ export default function SettingsScreen() {
     setAvatarUploading(true)
     try {
       const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
-      const path = `avatars/${userId}/${Date.now()}.${ext}`
+      const path = `${userId}/avatars/${Date.now()}.${ext}`
       const { error } = await supabase.storage
         .from('posts')
         .upload(path, file, { contentType: file.type, upsert: true })
