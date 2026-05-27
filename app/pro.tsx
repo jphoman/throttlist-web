@@ -10,49 +10,12 @@ import {
 import { router } from 'expo-router'
 import {
   ArrowLeft,
-  DollarSign,
-  TrendingUp,
   CheckCircle,
-  Users,
-  Globe,
-  ShoppingCart,
   ProBadge,
 } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-const FEATURES = [
-  {
-    icon: <ShoppingCart size={20} color={colors.accent} />,
-    title: 'Customized storefront on your profile',
-    body: 'Showcase up to 20 products — tagged parts, Meta Shop items, or personal picks — in a dedicated store section on your profile.',
-  },
-  {
-    icon: <DollarSign size={20} color={colors.accent} />,
-    title: 'Earn affiliate commissions',
-    body: 'Keep 70% of every commission generated through your part links. Payments land in your bank monthly.',
-  },
-  {
-    icon: <TrendingUp size={20} color={colors.accent} />,
-    title: 'Advanced link analytics',
-    body: 'See click-through rates, top-performing parts, and estimated earnings — updated in real time.',
-  },
-  {
-    icon: <ProBadge size={20} />,
-    title: 'Pro badge on your profile',
-    body: 'Stand out with a verified Pro badge on your profile and all your builds.',
-  },
-  {
-    icon: <Users size={20} color={colors.accent} />,
-    title: 'Priority in Discover',
-    body: 'Pro builds get boosted placement in Discover, putting your work in front of more riders.',
-  },
-  {
-    icon: <Globe size={20} color={colors.accent} />,
-    title: 'Custom profile link',
-    body: 'Get a short throttlist.com/@you link to share everywhere — your own moto hub.',
-  },
-]
 
 const INCLUDED = [
   'Everything in Basic — always free',
@@ -109,20 +72,6 @@ export default function ProScreen() {
             <View key={i} style={styles.includedRow}>
               <CheckCircle size={16} color={colors.green} />
               <Text style={styles.includedText}>{item}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Feature cards */}
-        <Text style={styles.sectionTitle}>Why Pro</Text>
-        <View style={styles.featureList}>
-          {FEATURES.map((f, i) => (
-            <View key={i} style={styles.featureCard}>
-              <View style={styles.featureIcon}>{f.icon}</View>
-              <View style={styles.featureBody}>
-                <Text style={styles.featureTitle}>{f.title}</Text>
-                <Text style={styles.featureText}>{f.body}</Text>
-              </View>
             </View>
           ))}
         </View>
