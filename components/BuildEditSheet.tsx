@@ -39,6 +39,7 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
   const [isPrivate, setIsPrivate] = useState(false)
   const [selectedCoverUrl, setSelectedCoverUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   useEffect(() => {
     if (visible) {
@@ -47,6 +48,7 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
       setTags(parsed)
       setIsPrivate(build.status === 'private')
       setSelectedCoverUrl(null) // reset selection each time sheet opens
+      setUploadError(null)
     }
   }, [visible, build])
 
@@ -70,19 +72,23 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
 
   async function handleFileChange(e: any) {
     const file = e.target?.files?.[0]
-    if (!file || !userId) return
+    if (!file) return
+    setUploadError(null)
     setUploading(true)
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg'
-      const path = `covers/${userId}/${Date.now()}.${ext}`
+      const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
+      const path = `covers/${userId || 'anon'}/${Date.now()}.${ext}`
       const { error } = await supabase.storage
         .from('posts')
-        .upload(path, file, { contentType: file.type, upsert: false })
+        .upload(path, file, { contentType: file.type, upsert: true })
       if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
       setSelectedCoverUrl(publicUrl)
-    } catch (err) {
+      // Reset the input so the same file can be re-selected if needed
+      e.target.value = ''
+    } catch (err: any) {
       console.error('Cover upload failed', err)
+      setUploadError(err?.message ?? 'Upload failed. Please try again.')
     } finally {
       setUploading(false)
     }
@@ -192,6 +198,11 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
                   </>
                 )}
 
+                {/* Upload error */}
+                {uploadError && (
+                  <Text style={styles.uploadError}>{uploadError}</Text>
+                )}
+
                 {/* Upload new image */}
                 {Platform.OS === 'web' ? (
                   <>
@@ -201,7 +212,7 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
                       accept="image/*"
                       onChange={handleFileChange}
                       style={{ display: 'none' }}
-                      disabled={uploading || !userId}
+                      disabled={uploading}
                     />
                     <label
                       htmlFor="cover-photo-file-input"
@@ -218,8 +229,8 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
                         paddingBottom: 12,
                         border: `1px dashed ${colors.surface3}`,
                         marginBottom: 8,
-                        cursor: uploading || !userId ? 'not-allowed' : 'pointer',
-                        opacity: uploading || !userId ? 0.5 : 1,
+                        cursor: uploading ? 'not-allowed' : 'pointer',
+                        opacity: uploading ? 0.5 : 1,
                       } as any}
                     >
                       {uploading ? (
@@ -338,8 +349,14 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
               <Pressable style={styles.cancelBtn} onPress={onClose}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.saveBtn} onPress={handleSave}>
-                <Text style={styles.saveBtnText}>Save Changes</Text>
+              <Pressable
+                style={[styles.saveBtn, uploading && { opacity: 0.5 }]}
+                onPress={handleSave}
+                disabled={uploading}
+              >
+                <Text style={styles.saveBtnText}>
+                  {uploading ? 'Uploading…' : 'Save Changes'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -431,6 +448,11 @@ const styles = StyleSheet.create({
   noCoverText: {
     color: colors.textTertiary,
     fontSize: 13,
+  },
+  uploadError: {
+    color: colors.accent,
+    fontSize: 12,
+    marginBottom: 8,
   },
   selectedBadge: {
     position: 'absolute',

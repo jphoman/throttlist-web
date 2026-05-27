@@ -192,7 +192,8 @@ export async function updateBuild(buildId: string, updates: {
   if (updates.tags !== undefined) patch.tags = updates.tags
   if (updates.status !== undefined) patch.status = updates.status
   if (updates.cover_photo_url !== undefined) patch.cover_photo_url = updates.cover_photo_url
-  await supabase.from('builds').update(patch).eq('id', buildId)
+  const { error } = await supabase.from('builds').update(patch).eq('id', buildId)
+  if (error) throw error
 }
 
 // ─── Post queries ─────────────────────────────────────────────────────────────
