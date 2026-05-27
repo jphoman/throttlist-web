@@ -139,7 +139,7 @@ export default function ProfileScreen() {
       {topBuilds.length > 0 && (
         <View style={styles.topBuildsSection}>
           <View style={styles.topBuildsSectionHeader}>
-            <Text style={styles.sectionLabel}>Top Builds</Text>
+            <Text style={styles.sectionLabel}>Top 8</Text>
             <Pressable onPress={() => router.push('/top-builds-edit' as any)}>
               <Text style={styles.editLink}>Edit</Text>
             </Pressable>

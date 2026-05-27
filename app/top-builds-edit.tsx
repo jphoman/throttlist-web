@@ -23,7 +23,7 @@ import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
 import type { Build } from '@/types'
 
-const MAX = 10
+const MAX = 8
 
 async function fetchEditorData(userId: string) {
   const [allBuilds, followedBuilds, profile] = await Promise.all([
@@ -169,7 +169,7 @@ export default function TopBuildsEditScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Edit Top Builds</Text>
+        <Text style={styles.headerTitle}>Edit Top 8</Text>
         <Pressable onPress={save} style={styles.saveBtn} disabled={saving}>
           <Text style={[styles.saveBtnText, saving && { opacity: 0.5 }]}>
             {saving ? 'Saving…' : 'Save'}

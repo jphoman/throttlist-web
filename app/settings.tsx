@@ -230,7 +230,7 @@ export default function SettingsScreen() {
               return (
                 <View key="topBuilds" style={[styles.reorderRow, styles.reorderSectionRow]}>
                   <View style={styles.reorderRowLeft}>
-                    <Text style={styles.reorderTitle}>Top Builds</Text>
+                    <Text style={styles.reorderTitle}>Top 8</Text>
                   </View>
                   <View style={styles.reorderArrows}>
                     <Pressable onPress={() => moveProfileItem(idx, -1)} style={styles.reorderArrow} disabled={idx === 0}>
@@ -468,7 +468,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>Profile</Text>
         <View style={styles.group}>
           <Pressable style={styles.row} onPress={() => router.push('/top-builds-edit' as any)}>
-            <Text style={styles.rowText}>Top Builds</Text>
+            <Text style={styles.rowText}>Top 8</Text>
             <ChevronRight size={16} color={colors.textTertiary} />
           </Pressable>
           <View style={styles.separator} />

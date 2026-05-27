@@ -240,7 +240,7 @@ export default function UserProfileScreen() {
         {/* ── Top Builds ── */}
         {topBuilds.length > 0 && (
           <View style={styles.topBuildsSection}>
-            <Text style={[styles.sectionLabel, { paddingHorizontal: 16 }]}>Top Builds</Text>
+            <Text style={[styles.sectionLabel, { paddingHorizontal: 16 }]}>Top 8</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}

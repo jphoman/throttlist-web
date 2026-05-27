@@ -824,7 +824,7 @@ export function setUserTopBuildIds(userId: string, ids: string[]) {
   _userTopBuildIds[userId] = ids
 }
 
-export function getTopBuilds(limit = 10, excludeUserId?: string): Build[] {
+export function getTopBuilds(limit = 8, excludeUserId?: string): Build[] {
   const userMap = Object.fromEntries(MOCK_USERS.map(u => [u.id, u]))
   // If the profile owner has explicit selections, use those
   if (excludeUserId) {
