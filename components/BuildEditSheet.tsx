@@ -68,31 +68,24 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
     return result
   }, [posts])
 
-  async function handlePickImage() {
-    if (Platform.OS !== 'web' || !userId) return
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      setUploading(true)
-      try {
-        const ext = file.name.split('.').pop() ?? 'jpg'
-        const path = `covers/${userId}/${Date.now()}.${ext}`
-        const { error } = await supabase.storage
-          .from('posts')
-          .upload(path, file, { contentType: file.type, upsert: false })
-        if (error) throw error
-        const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
-        setSelectedCoverUrl(publicUrl)
-      } catch (err) {
-        console.error('Cover upload failed', err)
-      } finally {
-        setUploading(false)
-      }
+  async function handleFileChange(e: any) {
+    const file = e.target?.files?.[0]
+    if (!file || !userId) return
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const path = `covers/${userId}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from('posts')
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+      setSelectedCoverUrl(publicUrl)
+    } catch (err) {
+      console.error('Cover upload failed', err)
+    } finally {
+      setUploading(false)
     }
-    input.click()
   }
 
   function addTag() {
@@ -200,20 +193,60 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
                 )}
 
                 {/* Upload new image */}
-                <Pressable
-                  style={styles.coverPhotoBtn}
-                  onPress={handlePickImage}
-                  disabled={uploading || !userId}
-                >
-                  {uploading ? (
-                    <ActivityIndicator size="small" color={colors.textSecondary} />
-                  ) : (
-                    <>
-                      <Camera size={18} color={colors.textSecondary} />
-                      <Text style={styles.coverPhotoBtnText}>Upload new image</Text>
-                    </>
-                  )}
-                </Pressable>
+                {Platform.OS === 'web' ? (
+                  <>
+                    <input
+                      id="cover-photo-file-input"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                      disabled={uploading || !userId}
+                    />
+                    <label
+                      htmlFor="cover-photo-file-input"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                        backgroundColor: colors.surface2,
+                        borderRadius: 10,
+                        paddingLeft: 14,
+                        paddingRight: 14,
+                        paddingTop: 12,
+                        paddingBottom: 12,
+                        border: `1px dashed ${colors.surface3}`,
+                        marginBottom: 8,
+                        cursor: uploading || !userId ? 'not-allowed' : 'pointer',
+                        opacity: uploading || !userId ? 0.5 : 1,
+                      } as any}
+                    >
+                      {uploading ? (
+                        <ActivityIndicator size="small" color={colors.textSecondary} />
+                      ) : (
+                        <>
+                          <Camera size={18} color={colors.textSecondary} />
+                          <Text style={styles.coverPhotoBtnText}>Upload new image</Text>
+                        </>
+                      )}
+                    </label>
+                  </>
+                ) : (
+                  <Pressable
+                    style={styles.coverPhotoBtn}
+                    disabled={uploading || !userId}
+                  >
+                    {uploading ? (
+                      <ActivityIndicator size="small" color={colors.textSecondary} />
+                    ) : (
+                      <>
+                        <Camera size={18} color={colors.textSecondary} />
+                        <Text style={styles.coverPhotoBtnText}>Upload new image</Text>
+                      </>
+                    )}
+                  </Pressable>
+                )}
               </View>
 
               {/* Nickname */}
