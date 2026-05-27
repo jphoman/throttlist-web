@@ -362,7 +362,7 @@ export default function ProductSheet({
                     <Text style={sh.hint}>
                       {mode === 'amazon'
                         ? `Opens Amazon with your affiliate tag pre-loaded. Find a product, copy its URL, then come back here.`
-                        : `Opens Google Shopping. Find a product at any retailer, copy the URL, then come back here.`}
+                        : `Opens Google Shopping. Find the item you want to tag.`}
                     </Text>
                   </View>
                 ) : (
