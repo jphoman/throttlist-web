@@ -24,6 +24,7 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  Image,
   Platform,
   Modal,
   ActivityIndicator,
@@ -128,6 +129,7 @@ export default function ProductSheet({
 
   // Shared confirm state
   const [title, setTitle] = useState('')
+  const [productImage, setProductImage] = useState<string | null>(null)
   const [category, setCategory] = useState('')
 
   const userEditedTitleRef = useRef(false)
@@ -143,6 +145,7 @@ export default function ProductSheet({
     setUrlStep('input')
     setFetchingTitle(false)
     setTitle('')
+    setProductImage(null)
     setCategory('')
     userEditedTitleRef.current = false
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
@@ -160,9 +163,14 @@ export default function ProductSheet({
     try {
       const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`)
       const data = await res.json()
-      if (data.status === 'success' && data.data?.title) {
-        const fetched = cleanTitle(data.data.title)
-        if (fetched && !userEditedTitleRef.current) setTitle(fetched)
+      if (data.status === 'success') {
+        if (data.data?.title) {
+          const fetched = cleanTitle(data.data.title)
+          if (fetched && !userEditedTitleRef.current) setTitle(fetched)
+        }
+        // Grab the OG image — microlink returns it under data.image.url
+        const img = data.data?.image?.url ?? data.data?.logo?.url ?? null
+        if (img) setProductImage(img)
       }
     } catch { /* silently fail */ } finally {
       setFetchingTitle(false)
@@ -227,6 +235,7 @@ export default function ProductSheet({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title: title.trim(),
       brand: domain,
+      imageUrl: productImage || undefined,
       rawUrl: raw,
       trackingUrl: affiliateUrl,
       source,
@@ -244,6 +253,7 @@ export default function ProductSheet({
         productUrl: raw,
         affiliateUrl,
         productTitle: title.trim(),
+        productImageUrl: productImage || undefined,
         sourceDomain: domain,
         category: category || undefined,
       }).catch(err => console.warn('[ProductSheet] product_tags save failed', err))
@@ -392,9 +402,19 @@ export default function ProductSheet({
                   </View>
                 )}
 
-                {/* Phase 3 — title + category (after URL recognised) */}
+                {/* Phase 3 — thumbnail + title + category (after URL recognised) */}
                 {urlStep === 'confirm' && (
                   <View style={sh.section}>
+                    {/* Product image thumbnail — shown once microlink resolves */}
+                    {productImage && (
+                      <View style={sh.productThumb}>
+                        <Image
+                          source={{ uri: productImage }}
+                          style={sh.productThumbImg}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    )}
                     <View style={sh.sectionLabelRow}>
                       <Text style={sh.sectionLabel}>PRODUCT TITLE</Text>
                       {fetchingTitle && (
@@ -464,6 +484,16 @@ export default function ProductSheet({
                           <Text style={sh.affiliatePillText}>affiliate tracked</Text>
                         </View>
                       )}
+                    </View>
+                  )}
+                  {/* Thumbnail shown once microlink resolves for manual URL entry too */}
+                  {productImage && (
+                    <View style={[sh.productThumb, { marginTop: 10 }]}>
+                      <Image
+                        source={{ uri: productImage }}
+                        style={sh.productThumbImg}
+                        resizeMode="cover"
+                      />
                     </View>
                   )}
                 </View>
@@ -657,6 +687,20 @@ export const sh = StyleSheet.create({
     borderColor: colors.border,
   },
   manualNoteText: { color: colors.textTertiary, fontSize: 12, lineHeight: 18 },
+  productThumb: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 12,
+    width: '100%',
+    aspectRatio: 16 / 9,
+  },
+  productThumbImg: {
+    width: '100%',
+    height: '100%',
+  },
   catRow: { flexDirection: 'row', gap: 7, paddingBottom: 4 },
   catChip: {
     paddingHorizontal: 12,

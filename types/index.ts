@@ -54,6 +54,7 @@ export interface LinkedProduct {
   id: string
   title: string
   brand?: string
+  imageUrl?: string   // product thumbnail fetched from OG image / microlink
   rawUrl: string
   trackingUrl: string
   x: number   // 0-1 relative position on image

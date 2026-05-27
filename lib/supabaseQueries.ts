@@ -892,19 +892,21 @@ export async function saveProductTag(tag: {
   productUrl: string
   affiliateUrl: string
   productTitle: string
+  productImageUrl?: string
   sourceDomain?: string
   category?: string
 }): Promise<void> {
   const { error } = await supabase.from('product_tags').insert({
-    user_id:       tag.userId,
-    build_id:      tag.buildId ?? null,
-    post_id:       tag.postId ?? null,
-    tracking_id:   tag.trackingId,
-    product_url:   tag.productUrl,
-    affiliate_url: tag.affiliateUrl,
-    product_title: tag.productTitle,
-    source_domain: tag.sourceDomain ?? null,
-    category:      tag.category ?? null,
+    user_id:           tag.userId,
+    build_id:          tag.buildId ?? null,
+    post_id:           tag.postId ?? null,
+    tracking_id:       tag.trackingId,
+    product_url:       tag.productUrl,
+    affiliate_url:     tag.affiliateUrl,
+    product_title:     tag.productTitle,
+    product_image_url: tag.productImageUrl ?? null,
+    source_domain:     tag.sourceDomain ?? null,
+    category:          tag.category ?? null,
   })
   if (error) throw error
 }
