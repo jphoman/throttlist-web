@@ -25,6 +25,7 @@ import {
   ProBadge,
 } from '@/components/Icons'
 import { fetchProfile, fetchUserBuilds, updateProfile } from '@/lib/supabaseQueries'
+import { supabase } from '@/lib/supabase'
 import { colors } from '@/constants/throttlist'
 import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
@@ -63,6 +64,33 @@ export default function SettingsScreen() {
     setStoreOnState(v)
   }
 
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null)
+
+  async function handleAvatarFileChange(e: any) {
+    const file = e.target?.files?.[0]
+    if (!file || !userId) return
+    setAvatarUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
+      const path = `avatars/${userId}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from('posts')
+        .upload(path, file, { contentType: file.type, upsert: true })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+      setLocalAvatarUrl(publicUrl)
+      await updateProfile(userId, { avatar_url: publicUrl })
+      queryClient.invalidateQueries({ queryKey: ['profile', userId] })
+    } catch (err: any) {
+      console.error('Avatar upload failed', err)
+      Alert.alert('Upload failed', err?.message ?? 'Could not upload photo. Please try again.')
+    } finally {
+      setAvatarUploading(false)
+      e.target.value = ''
+    }
+  }
+
   const [profileOrder, setProfileOrder] = useState<OrderItem[]>([])
 
   async function openReorderProfile() {
@@ -97,6 +125,7 @@ export default function SettingsScreen() {
     setLocation(user?.location ?? '')
     setInstagram(user?.instagramHandle ?? '')
     setYoutube(user?.youtubeHandle ?? '')
+    setLocalAvatarUrl(null)
     setSection('editProfile')
   }
 
@@ -255,15 +284,44 @@ export default function SettingsScreen() {
 
         <ScrollView contentContainerStyle={styles.editContent} showsVerticalScrollIndicator={false}>
           <View style={styles.avatarSection}>
-            {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={styles.editAvatar} />
+            {localAvatarUrl || user?.avatarUrl ? (
+              <Image source={{ uri: localAvatarUrl || user?.avatarUrl }} style={[styles.editAvatar, avatarUploading && { opacity: 0.5 }]} />
             ) : (
               <InitialsAvatar name={user?.displayName ?? ''} size={80} />
             )}
-            <Pressable style={styles.changePhotoBtn}>
-              <Camera size={14} color={colors.accent} />
-              <Text style={styles.changePhotoText}>Change photo</Text>
-            </Pressable>
+            {Platform.OS === 'web' ? (
+              <>
+                <input
+                  id="avatar-file-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarFileChange}
+                  style={{ display: 'none' }}
+                  disabled={avatarUploading}
+                />
+                <label
+                  htmlFor="avatar-file-input"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 5,
+                    cursor: avatarUploading ? 'not-allowed' : 'pointer',
+                    opacity: avatarUploading ? 0.5 : 1,
+                  } as any}
+                >
+                  <Camera size={14} color={colors.accent} />
+                  <Text style={styles.changePhotoText}>
+                    {avatarUploading ? 'Uploading…' : 'Change photo'}
+                  </Text>
+                </label>
+              </>
+            ) : (
+              <Pressable style={styles.changePhotoBtn}>
+                <Camera size={14} color={colors.accent} />
+                <Text style={styles.changePhotoText}>Change photo</Text>
+              </Pressable>
+            )}
           </View>
 
           <View style={styles.fieldGroup}>
