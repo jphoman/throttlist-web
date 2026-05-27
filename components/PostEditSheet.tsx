@@ -159,19 +159,27 @@ export default function PostEditSheet({
               {/* Photos */}
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Photos</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.photosRow}
-                >
-                  {photos.map((uri, i) => (
-                    <View key={i} style={styles.photoWrap}>
-                      <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
-                      <Pressable style={styles.photoRemove} onPress={() => removePhoto(uri)}>
-                        <X size={11} color="#fff" />
-                      </Pressable>
-                    </View>
-                  ))}
+                <View style={styles.photosRowWrap}>
+                  {/* Existing photos in a horizontal scroll strip */}
+                  {photos.length > 0 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.photosRow}
+                      style={styles.photosScroll}
+                    >
+                      {photos.map((uri, i) => (
+                        <View key={i} style={styles.photoWrap}>
+                          <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+                          <Pressable style={styles.photoRemove} onPress={() => removePhoto(uri)}>
+                            <X size={11} color="#fff" />
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  {/* Add button — outside ScrollView so label click isn't swallowed */}
                   {Platform.OS === 'web' ? (
                     <>
                       <input
@@ -212,7 +220,7 @@ export default function PostEditSheet({
                       <Text style={styles.addPhotoBtnText}>Add</Text>
                     </Pressable>
                   )}
-                </ScrollView>
+                </View>
                 {photoError ? (
                   <Text style={styles.photoError}>{photoError}</Text>
                 ) : null}
@@ -414,6 +422,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   // Photos
+  photosRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  photosScroll: { flex: 1 },
   photosRow: { flexDirection: 'row', gap: 10, paddingBottom: 4 },
   photoWrap: { position: 'relative', width: 76, height: 76, borderRadius: 10, overflow: 'hidden' },
   photoThumb: { width: '100%', height: '100%', backgroundColor: colors.surface2 },
