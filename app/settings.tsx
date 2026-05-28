@@ -45,7 +45,7 @@ export default function SettingsScreen() {
   const userId = authUser?.id ?? ''
 
   const { data: user } = useQuery({
-    queryKey: ['profile', userId],
+    queryKey: ['settings-profile', userId],
     queryFn: () => fetchProfile(userId),
     enabled: !!userId,
   })
@@ -139,19 +139,17 @@ export default function SettingsScreen() {
     }
     setSaving(true)
     try {
-      const updated = await updateProfile(userId, {
+      await updateProfile(userId, {
         display_name: displayName,
         bio,
         location,
         instagram_handle: instagram,
         youtube_handle: youtube,
       })
-      // Update cache directly so the profile tab shows new data instantly
-      // without triggering a loading/blank state
-      if (updated) {
-        const prev = queryClient.getQueryData<[any, any[]]>(['profile', userId])
-        queryClient.setQueryData(['profile', userId], [updated, prev?.[1] ?? []])
-      }
+      // Invalidate the profile tab's cache so it refetches with fresh data.
+      // Uses its own key ['profile', userId] which stores [User, Build[]] —
+      // separate from settings' ['settings-profile', userId] key.
+      queryClient.invalidateQueries({ queryKey: ['profile', userId] })
       queryClient.invalidateQueries({ queryKey: ['user-profile'] })
     } finally {
       setSaving(false)
