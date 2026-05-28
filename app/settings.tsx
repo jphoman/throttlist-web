@@ -133,17 +133,25 @@ export default function SettingsScreen() {
   }
 
   async function handleSave() {
-    if (!userId) return
+    if (!userId) {
+      router.dismiss()
+      return
+    }
     setSaving(true)
     try {
-      await updateProfile(userId, {
+      const updated = await updateProfile(userId, {
         display_name: displayName,
         bio,
         location,
         instagram_handle: instagram,
         youtube_handle: youtube,
       })
-      queryClient.invalidateQueries({ queryKey: ['profile', userId] })
+      // Update cache directly so the profile tab shows new data instantly
+      // without triggering a loading/blank state
+      if (updated) {
+        const prev = queryClient.getQueryData<[any, any[]]>(['profile', userId])
+        queryClient.setQueryData(['profile', userId], [updated, prev?.[1] ?? []])
+      }
       queryClient.invalidateQueries({ queryKey: ['user-profile'] })
     } finally {
       setSaving(false)
