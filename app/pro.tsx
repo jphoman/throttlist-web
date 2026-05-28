@@ -98,9 +98,9 @@ export default function ProScreen() {
         {/* Earnings callout */}
         <View style={styles.callout}>
           <Text style={styles.calloutText}>
-            Builders on average are earning{' '}
-            <Text style={styles.calloutAccent}>$30 - $100</Text>
-            {' '}a month in commissions from tags.
+            Pro Builders with just 1000 followers can generate{' '}
+            <Text style={styles.calloutAccent}>$100 - $500</Text>
+            {' '}or more a month from tags.
           </Text>
         </View>
 
