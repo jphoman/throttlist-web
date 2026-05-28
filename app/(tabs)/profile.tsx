@@ -165,9 +165,12 @@ export default function ProfileScreen() {
                 <Text style={styles.topBuildName} numberOfLines={1}>
                   {build.nickname || `${build.year} ${build.make}`}
                 </Text>
-                <Text style={styles.topBuildUsername} numberOfLines={1}>
-                  @{build.username}
-                </Text>
+                <View style={styles.topBuildUsernameRow}>
+                  <Text style={styles.topBuildUsername} numberOfLines={1}>
+                    @{build.username}
+                  </Text>
+                  {build.ownerIsPro && <ProBadge size={10} />}
+                </View>
               </Pressable>
             ))}
           </ScrollView>
@@ -383,11 +386,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     width: '100%',
   },
+  topBuildUsernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    marginTop: 1,
+  },
   topBuildUsername: {
     color: colors.textTertiary,
     fontSize: 10,
     textAlign: 'center',
-    marginTop: 1,
     width: '100%',
   },
   buildsSectionHeader: {
