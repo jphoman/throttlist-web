@@ -213,23 +213,33 @@ export default function UserProfileScreen() {
               )}
             </View>
 
-          {/* ── Follow button — top-right of avatar row ── */}
+          {/* ── Follow + Message buttons — top-right of avatar row ── */}
           {!isOwner && (
-            <Pressable
-              style={[styles.followBtn, isAnyFollowing && styles.followBtnActive]}
-              onPress={() => setModalOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel={isAnyFollowing ? 'Following' : 'Follow'}
-              accessibilityHint={
-                activeBuilds.length > 1
-                  ? 'Opens a dialog to choose which builds to follow'
-                  : isAnyFollowing ? 'Tap to manage' : 'Follow this creator'
-              }
-            >
-              <Text style={[styles.followBtnText, isAnyFollowing && styles.followBtnTextActive]}>
-                {isAnyFollowing ? 'Following' : 'Follow'}
-              </Text>
-            </Pressable>
+            <View style={styles.actionCol}>
+              <Pressable
+                style={[styles.followBtn, isAnyFollowing && styles.followBtnActive]}
+                onPress={() => setModalOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel={isAnyFollowing ? 'Following' : 'Follow'}
+                accessibilityHint={
+                  activeBuilds.length > 1
+                    ? 'Opens a dialog to choose which builds to follow'
+                    : isAnyFollowing ? 'Tap to manage' : 'Follow this creator'
+                }
+              >
+                <Text style={[styles.followBtnText, isAnyFollowing && styles.followBtnTextActive]}>
+                  {isAnyFollowing ? 'Following' : 'Follow'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.messageBtn}
+                onPress={() => router.push(`/conversation/${user.id}` as any)}
+                accessibilityRole="button"
+                accessibilityLabel="Message"
+              >
+                <Text style={styles.messageBtnText}>Message</Text>
+              </Pressable>
+            </View>
           )}
           </View>
 
@@ -413,6 +423,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
+  // Action column (follow + message stacked)
+  actionCol: {
+    alignItems: 'stretch',
+    gap: 6,
+    flexShrink: 0,
+  },
+
   // Follow button — top-right of avatar row
   followBtn: {
     borderWidth: 1,
@@ -424,8 +441,6 @@ const styles = StyleSheet.create({
     minHeight: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'flex-start',
-    flexShrink: 0,
   },
   followBtnActive: {
     backgroundColor: colors.accent,
@@ -437,6 +452,23 @@ const styles = StyleSheet.create({
   },
   followBtnTextActive: {
     color: '#fff',
+  },
+
+  // Message button — outlined grey pill
+  messageBtn: {
+    borderWidth: 1,
+    borderColor: colors.surface3,
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageBtnText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   bio: {
