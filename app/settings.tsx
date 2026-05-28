@@ -147,7 +147,7 @@ export default function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ['user-profile'] })
     } finally {
       setSaving(false)
-      setSection('main')
+      router.replace('/(tabs)/profile')
     }
   }
 
@@ -419,7 +419,7 @@ export default function SettingsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/profile')} style={styles.backBtn}>
+        <Pressable onPress={() => router.replace('/(tabs)/profile')} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
         <Text style={styles.headerTitle}>Settings</Text>
