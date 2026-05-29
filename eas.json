@@ -4,8 +4,7 @@
     "appVersionSource": "local"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
+    "simulator": {
       "distribution": "internal",
       "ios": {
         "simulator": true
