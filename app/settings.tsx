@@ -10,7 +10,6 @@ import {
   Alert,
   Platform,
   Switch,
-  Linking,
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native'
@@ -533,7 +532,7 @@ export default function SettingsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.dismiss()} style={styles.backBtn}>
+        <Pressable onPress={() => router.replace('/(tabs)/profile' as any)} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
         <Text style={styles.headerTitle}>Settings</Text>
@@ -653,7 +652,7 @@ export default function SettingsScreen() {
 
         <Text style={styles.sectionLabel}>Legal</Text>
         <View style={styles.group}>
-          <Pressable style={styles.row} onPress={() => Linking.openURL('https://throttlist.com/privacy')}>
+          <Pressable style={styles.row} onPress={() => router.push('/privacy' as any)}>
             <Text style={styles.rowText}>Terms & Privacy</Text>
             <ChevronRight size={16} color={colors.textTertiary} />
           </Pressable>

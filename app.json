@@ -51,8 +51,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "2ec04c81-41c4-441a-9aac-8d312aecb7da"
       }
-    }
+    },
+    "owner": "jacob-homan"
   }
 }
