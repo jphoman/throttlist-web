@@ -1,30 +1,28 @@
 import React from 'react'
 import { View, Pressable, StyleSheet, Platform } from 'react-native'
+import { router, usePathname } from 'expo-router'
 import { Home, Compass, Plus, Send, User } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 
-function nav(path: string) {
-  if (typeof window !== 'undefined') {
-    window.location.href = path
-  }
-}
-
-function activeTab() {
-  if (typeof window === 'undefined') return null
-  const seg = window.location.pathname.replace('/', '')
-  return seg || 'feed'
-}
-
 export default function TabBar() {
-  const tab = activeTab()
+  const pathname = usePathname()
+  const seg = pathname.replace(/^\//, '').split('/')[0] || 'feed'
+
+  const nav = (path: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      window.location.href = path
+    } else {
+      router.push(path as any)
+    }
+  }
 
   return (
     <View style={styles.bar}>
       <Pressable style={styles.item} onPress={() => nav('/feed')}>
-        <Home size={22} color={tab === 'feed' ? '#FFFFFF' : colors.textSecondary} />
+        <Home size={22} color={seg === 'feed' ? '#FFFFFF' : colors.textSecondary} />
       </Pressable>
       <Pressable style={styles.item} onPress={() => nav('/discover')}>
-        <Compass size={22} color={tab === 'discover' ? '#FFFFFF' : colors.textSecondary} />
+        <Compass size={22} color={seg === 'discover' ? '#FFFFFF' : colors.textSecondary} />
       </Pressable>
       <Pressable style={styles.item} onPress={() => nav('/capture')}>
         <View style={styles.addCircle}>
@@ -32,10 +30,10 @@ export default function TabBar() {
         </View>
       </Pressable>
       <Pressable style={styles.item} onPress={() => nav('/messages')}>
-        <Send size={22} color={tab === 'messages' ? '#FFFFFF' : colors.textSecondary} />
+        <Send size={22} color={seg === 'messages' ? '#FFFFFF' : colors.textSecondary} />
       </Pressable>
       <Pressable style={styles.item} onPress={() => nav('/profile')}>
-        <User size={22} color={tab === 'profile' ? '#FFFFFF' : colors.textSecondary} />
+        <User size={22} color={seg === 'profile' ? '#FFFFFF' : colors.textSecondary} />
       </Pressable>
     </View>
   )
