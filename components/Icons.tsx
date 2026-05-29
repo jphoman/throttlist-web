@@ -98,6 +98,10 @@ export function ArrowLeft({ size = 24, color = '#000' }: IconProps) {
   return <Feather name="arrow-left" size={size} color={color} />
 }
 
+export function ArrowUp({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="arrow-up" size={size} color={color} />
+}
+
 export function Hash({ size = 24, color = '#000' }: IconProps) {
   return <Feather name="hash" size={size} color={color} />
 }
@@ -128,6 +132,10 @@ export function CheckCircle({ size = 24, color = '#000' }: IconProps) {
 
 export function UserPlus({ size = 24, color = '#000' }: IconProps) {
   return <Feather name="user-plus" size={size} color={color} />
+}
+
+export function UserMinus({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="user-minus" size={size} color={color} />
 }
 
 export function Edit2({ size = 24, color = '#000' }: IconProps) {
@@ -192,6 +200,14 @@ export function Gallery({ size = 24, color = '#000' }: IconProps) {
 
 export function Check({ size = 24, color = '#000' }: IconProps) {
   return <Feather name="check" size={size} color={color} />
+}
+
+export function Eye({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="eye" size={size} color={color} />
+}
+
+export function EyeOff({ size = 24, color = '#000' }: IconProps) {
+  return <Feather name="eye-off" size={size} color={color} />
 }
 
 const CATEGORY_ICON_MAP: Record<string, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {

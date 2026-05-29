@@ -16,7 +16,7 @@ import { colors, timeAgo, formatFollowers } from '@/constants/throttlist'
 import { router } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import CommentSheet from '@/components/CommentSheet'
-import { toggleLike } from '@/lib/supabaseQueries'
+import { toggleLike, trackTagClick } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import type { Post, Part, LinkedProduct } from '@/types'
 
@@ -209,6 +209,13 @@ export default function PostCard({
                       style={styles.tagRow}
                       onPress={() => {
                         if (product.trackingUrl) {
+                          // Record click for discover ranking before opening
+                          trackTagClick(
+                            post.id,
+                            post.buildId || null,
+                            userId || null,
+                            product.trackingUrl,
+                          )
                           WebBrowser.openBrowserAsync(product.trackingUrl)
                         }
                         setTagsOpen(false)

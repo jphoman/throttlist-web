@@ -13,10 +13,10 @@ import {
   ScrollView,
 } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { router } from 'expo-router'
-import { Bell, Compass, ChevronDown, X as XIcon } from '@/components/Icons'
+import { router, useFocusEffect } from 'expo-router'
+import { Bell, Compass, ChevronDown, X as XIcon, ArrowUp } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFollowedFeed, fetchForYouFeed, fetchFollowedBuilds, fetchLikedPostIds, toggleBuildFollow } from '@/lib/supabaseQueries'
+import { fetchFollowedFeed, fetchForYouFeed, fetchFollowedBuilds, fetchLikedPostIds, toggleBuildFollow, fetchHasNewFeedPosts } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
@@ -43,9 +43,14 @@ export default function FeedScreen() {
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
   const [buildSearch, setBuildSearch] = useState('')
   const scrollY = useRef(new Animated.Value(0)).current
+  const listRef = useRef<any>(null)
+  const latestPostTimeRef = useRef<string | null>(null)
+  const hasMountedRef = useRef(false)
+  const bannerAnim = useRef(new Animated.Value(0)).current
+  const [showNewPostsBanner, setShowNewPostsBanner] = useState(false)
 
   // Persistent filter state — survives navigation via Zustand
-  const { sortMode, buildFilter, buildTypeFilter, setSortMode, setBuildFilter, setBuildTypeFilter } = useFeedFilters()
+  const { sortMode, buildFilter, buildTypeFilter, scrollOffset, setSortMode, setBuildFilter, setBuildTypeFilter, setScrollOffset } = useFeedFilters()
 
   // Normalize: if the stored value isn't a known category, treat as unset (no flash)
   const effectiveTypeFilter = BUILD_CATEGORIES.some(c => c.id === buildTypeFilter) ? buildTypeFilter : ''
@@ -56,6 +61,41 @@ export default function FeedScreen() {
       setBuildTypeFilter('')
     }
   }, [buildTypeFilter, effectiveTypeFilter, setBuildTypeFilter])
+
+  // Animate banner in/out
+  useEffect(() => {
+    Animated.timing(bannerAnim, {
+      toValue: showNewPostsBanner ? 1 : 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start()
+  }, [showNewPostsBanner, bannerAnim])
+
+  // On tab focus: restore scroll + check for new posts (skip first mount)
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasMountedRef.current) {
+        hasMountedRef.current = true
+        return
+      }
+
+      // Restore scroll
+      const t = scrollOffset > 0 && listRef.current
+        ? setTimeout(() => {
+            listRef.current?.scrollToOffset({ offset: scrollOffset, animated: false })
+          }, 50)
+        : null
+
+      // Check for new posts silently
+      if (userId && latestPostTimeRef.current) {
+        fetchHasNewFeedPosts(userId, latestPostTimeRef.current).then(hasNew => {
+          if (hasNew) setShowNewPostsBanner(true)
+        })
+      }
+
+      return () => { if (t) clearTimeout(t) }
+    }, [scrollOffset, userId])
+  )
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['feed-posts', sortMode, userId],
@@ -79,6 +119,17 @@ export default function FeedScreen() {
     staleTime: 60_000,
   })
 
+  // Track the newest post time — must come after `posts` is declared above
+  useEffect(() => {
+    if (posts.length > 0) {
+      const maxTime = posts.reduce(
+        (max, p) => (p.createdAt > max ? p.createdAt : max),
+        posts[0].createdAt,
+      )
+      latestPostTimeRef.current = maxTime
+    }
+  }, [posts])
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
     await queryClient.invalidateQueries({ queryKey: ['feed-posts', sortMode, userId] })
@@ -96,6 +147,14 @@ export default function FeedScreen() {
       setLocallyFollowed(prev => { const s = new Set(prev); s.delete(buildId); return s })
     }
   }, [userId, queryClient])
+
+  const handleNewPostsBanner = useCallback(async () => {
+    setShowNewPostsBanner(false)
+    await queryClient.invalidateQueries({ queryKey: ['feed-posts', sortMode, userId] })
+    setTimeout(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true })
+    }, 80)
+  }, [queryClient, sortMode, userId])
 
   const filteredBuilds = useMemo(() => {
     const q = buildSearch.toLowerCase()
@@ -268,6 +327,23 @@ export default function FeedScreen() {
         </View>
       </Animated.View>
 
+      {/* New posts banner */}
+      <Animated.View
+        style={[
+          styles.newPostsBanner,
+          {
+            opacity: bannerAnim,
+            transform: [{ translateY: bannerAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+          },
+        ]}
+        pointerEvents={showNewPostsBanner ? 'box-none' : 'none'}
+      >
+        <Pressable style={styles.newPostsPill} onPress={handleNewPostsBanner}>
+          <ArrowUp size={13} color="#fff" />
+          <Text style={styles.newPostsText}>New posts</Text>
+        </Pressable>
+      </Animated.View>
+
       {/* Build type picker */}
       <Modal
         visible={typePickerOpen}
@@ -365,6 +441,7 @@ export default function FeedScreen() {
         </View>
       ) : (
         <Animated.FlatList
+          ref={listRef}
           data={displayedPosts}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
@@ -388,7 +465,10 @@ export default function FeedScreen() {
           ListEmptyComponent={renderEmptyState()}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: false },
+            {
+              useNativeDriver: false,
+              listener: (e: any) => setScrollOffset(e.nativeEvent.contentOffset.y),
+            },
           )}
           scrollEventThrottle={16}
           refreshControl={
@@ -506,4 +586,32 @@ const styles = StyleSheet.create({
   skeletonLine: { height: 12, borderRadius: 6, backgroundColor: colors.surface3 },
   skeletonPhoto: { width: '100%', height: 300, backgroundColor: colors.surface2 },
   skeletonFooter: { padding: 16, gap: 8 },
+  newPostsBanner: {
+    position: 'absolute',
+    top: COMBINED_HEADER_HEIGHT + 10,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    alignItems: 'center',
+    pointerEvents: 'box-none',
+  },
+  newPostsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  newPostsText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 })

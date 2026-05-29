@@ -12,7 +12,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Instagram, Youtube, ProBadge } from '@/components/Icons'
+import { ArrowLeft, Instagram, Youtube, Link, ProBadge } from '@/components/Icons'
 import {
   fetchProfileByUsername,
   fetchUserBuilds,
@@ -185,7 +185,7 @@ export default function UserProfileScreen() {
               </View>
 
               {/* Social links */}
-              {(user.instagramHandle || user.youtubeHandle) && (
+              {(user.instagramHandle || user.youtubeHandle || user.websiteUrl) && (
                 <View style={styles.socialRow}>
                   {user.instagramHandle && (
                     <Pressable
@@ -206,6 +206,20 @@ export default function UserProfileScreen() {
                       <Youtube size={13} color={colors.textTertiary} />
                       <Text style={styles.socialHandle} numberOfLines={1}>
                         {user.youtubeHandle}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {user.websiteUrl && (
+                    <Pressable
+                      style={styles.socialLink}
+                      onPress={() => {
+                        const url = user.websiteUrl!.startsWith('http') ? user.websiteUrl! : `https://${user.websiteUrl}`
+                        Linking.openURL(url)
+                      }}
+                    >
+                      <Link size={13} color={colors.textTertiary} />
+                      <Text style={styles.socialHandle} numberOfLines={1}>
+                        {user.websiteTitle || (() => { try { return new URL(user.websiteUrl!.startsWith('http') ? user.websiteUrl! : `https://${user.websiteUrl}`).hostname } catch { return user.websiteUrl } })()}
                       </Text>
                     </Pressable>
                   )}

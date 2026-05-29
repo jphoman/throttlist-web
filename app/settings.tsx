@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   View,
   Text,
@@ -10,8 +10,11 @@ import {
   Alert,
   Platform,
   Switch,
+  Linking,
+  KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -22,6 +25,7 @@ import {
   Globe,
   Instagram,
   Youtube,
+  Link,
   ProBadge,
 } from '@/components/Icons'
 import { fetchProfile, fetchUserBuilds, updateProfile } from '@/lib/supabaseQueries'
@@ -56,8 +60,62 @@ export default function SettingsScreen() {
   const [location, setLocation] = useState('')
   const [instagram, setInstagram] = useState('')
   const [youtube, setYoutube] = useState('')
+  const [website, setWebsite] = useState('')
 
   const isPro = parseInt((user?.proTier ?? '0') as string) >= 1
+
+  const [mfaEnabled, setMfaEnabled] = useState(false)
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null)
+  const [mfaLoading, setMfaLoading] = useState(true)
+  const [disabling2FA, setDisabling2FA] = useState(false)
+
+  useEffect(() => {
+    ;(supabase.auth.mfa as any).listFactors().then(({ data }: any) => {
+      const verified = data?.totp?.find((f: any) => f.status === 'verified')
+      setMfaEnabled(!!verified)
+      setMfaFactorId(verified?.id ?? null)
+      setMfaLoading(false)
+    })
+  }, [])
+
+  useFocusEffect(useCallback(() => {
+    ;(supabase.auth.mfa as any).listFactors().then(({ data }: any) => {
+      const verified = data?.totp?.find((f: any) => f.status === 'verified')
+      setMfaEnabled(!!verified)
+      setMfaFactorId(verified?.id ?? null)
+      setMfaLoading(false)
+    })
+  }, []))
+
+  async function handle2FAToggle() {
+    if (!mfaEnabled) {
+      router.push('/two-factor-setup' as any)
+    } else {
+      const confirmed = Platform.OS === 'web'
+        ? window.confirm('Disable two-factor authentication? This will make your account less secure.')
+        : await new Promise<boolean>(resolve =>
+            Alert.alert(
+              'Disable 2FA',
+              'Disable two-factor authentication? This will make your account less secure.',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Disable', style: 'destructive', onPress: () => resolve(true) },
+              ]
+            )
+          )
+      if (!confirmed) return
+      setDisabling2FA(true)
+      try {
+        await (supabase.auth.mfa as any).unenroll({ factorId: mfaFactorId })
+        setMfaEnabled(false)
+        setMfaFactorId(null)
+      } catch (err: any) {
+        Alert.alert('Error', err?.message ?? 'Failed to disable 2FA.')
+      } finally {
+        setDisabling2FA(false)
+      }
+    }
+  }
 
   const [storeOn, setStoreOnState] = useState(false)
   function toggleStore(v: boolean) {
@@ -127,9 +185,32 @@ export default function SettingsScreen() {
     setLocation(user?.location ?? '')
     setInstagram(user?.instagramHandle ?? '')
     setYoutube(user?.youtubeHandle ?? '')
+    setWebsite(user?.websiteUrl ?? '')
     setLocalAvatarUrl(null)
     setAvatarError(null)
     setSection('editProfile')
+  }
+
+  async function fetchSiteTitle(rawUrl: string): Promise<string> {
+    try {
+      const url = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`
+      const controller = new AbortController()
+      const tid = setTimeout(() => controller.abort(), 5000)
+      const res = await fetch(url, { signal: controller.signal })
+      clearTimeout(tid)
+      const html = await res.text()
+      const match = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+      const title = match?.[1]?.trim()
+      if (title && title.length > 0) return title
+      return new URL(url).hostname
+    } catch {
+      try {
+        const url = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`
+        return new URL(url).hostname
+      } catch {
+        return rawUrl
+      }
+    }
   }
 
   async function handleSave() {
@@ -139,12 +220,16 @@ export default function SettingsScreen() {
     }
     setSaving(true)
     try {
+      const websiteUrl = website.trim() || null
+      const websiteTitle = websiteUrl ? await fetchSiteTitle(websiteUrl) : null
       await updateProfile(userId, {
         display_name: displayName,
         bio,
         location,
         instagram_handle: instagram,
         youtube_handle: youtube,
+        website_url: websiteUrl,
+        website_title: websiteTitle,
       })
       // Invalidate the profile tab's cache so it refetches with fresh data.
       // Uses its own key ['profile', userId] which stores [User, Build[]] —
@@ -278,7 +363,10 @@ export default function SettingsScreen() {
   // ─── Edit Profile Screen ─────────────────────────────────────────────────────
   if (section === 'editProfile') {
     return (
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.header}>
           <Pressable onPress={() => setSection('main')} style={styles.backBtn}>
             <ArrowLeft size={20} color={colors.textSecondary} />
@@ -291,7 +379,11 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.editContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+            contentContainerStyle={styles.editContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
           <View style={styles.avatarSection}>
             {localAvatarUrl || user?.avatarUrl ? (
               <Image source={{ uri: localAvatarUrl || user?.avatarUrl }} style={[styles.editAvatar, avatarUploading && { opacity: 0.5 }]} />
@@ -415,9 +507,25 @@ export default function SettingsScreen() {
                 />
               </View>
             </View>
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Website</Text>
+              <View style={styles.fieldIconRow}>
+                <Link size={15} color={colors.textTertiary} />
+                <TextInput
+                  style={[styles.fieldInput, styles.fieldInputFlex]}
+                  value={website}
+                  onChangeText={setWebsite}
+                  placeholder="https://yoursite.com"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+              </View>
+            </View>
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     )
   }
 
@@ -440,14 +548,6 @@ export default function SettingsScreen() {
             <ChevronRight size={16} color={colors.textTertiary} />
           </Pressable>
           <View style={styles.separator} />
-          <Pressable style={styles.row} onPress={() => Alert.alert('Change password', 'A reset link will be sent to your email.')}>
-            <Text style={styles.rowText}>Change Password</Text>
-            <ChevronRight size={16} color={colors.textTertiary} />
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionLabel}>Membership</Text>
-        <View style={styles.group}>
           {isPro ? (
             <>
               <Pressable style={styles.row} onPress={() => router.push('/membership')}>
@@ -464,22 +564,29 @@ export default function SettingsScreen() {
               </Pressable>
             </>
           ) : (
-            <Pressable style={styles.row} onPress={() => router.push('/pro')}>
-              <Text style={styles.rowText}>Upgrade to Pro</Text>
-              <ProBadge />
-            </Pressable>
+            <>
+              <Pressable style={styles.row} onPress={() => router.push('/pro')}>
+                <Text style={styles.rowText}>Upgrade to Pro</Text>
+                <ProBadge />
+              </Pressable>
+            </>
           )}
-        </View>
-
-        <Text style={styles.sectionLabel}>Profile</Text>
-        <View style={styles.group}>
+          <View style={styles.separator} />
+          <Pressable style={styles.row} onPress={openReorderProfile}>
+            <Text style={styles.rowText}>Reorder Profile</Text>
+            <ChevronRight size={16} color={colors.textTertiary} />
+          </Pressable>
+          <View style={styles.separator} />
           <Pressable style={styles.row} onPress={() => router.push('/top-builds-edit' as any)}>
             <Text style={styles.rowText}>Top 8</Text>
             <ChevronRight size={16} color={colors.textTertiary} />
           </Pressable>
-          <View style={styles.separator} />
-          {isPro && (
-            <>
+        </View>
+
+        {isPro && (
+          <>
+            <Text style={styles.sectionLabel}>Store</Text>
+            <View style={styles.group}>
               <View style={styles.row}>
                 <Text style={styles.rowText}>Show Store</Text>
                 <Switch
@@ -494,12 +601,30 @@ export default function SettingsScreen() {
                 <Text style={styles.rowText}>Store Items</Text>
                 <ChevronRight size={16} color={colors.textTertiary} />
               </Pressable>
-              <View style={styles.separator} />
-            </>
-          )}
-          <Pressable style={styles.row} onPress={openReorderProfile}>
-            <Text style={styles.rowText}>Reorder Profile</Text>
+            </View>
+          </>
+        )}
+
+        <Text style={styles.sectionLabel}>Security</Text>
+        <View style={styles.group}>
+          <Pressable style={styles.row} onPress={() => router.push('/change-password' as any)}>
+            <Text style={styles.rowText}>Change Password</Text>
             <ChevronRight size={16} color={colors.textTertiary} />
+          </Pressable>
+          <View style={styles.separator} />
+          <Pressable style={styles.row} onPress={handle2FAToggle} disabled={mfaLoading || disabling2FA}>
+            <View style={styles.rowLeft}>
+              <Text style={styles.rowText}>Two-Factor Authentication</Text>
+            </View>
+            <View style={styles.rowRight}>
+              {mfaLoading
+                ? <ActivityIndicator size="small" color={colors.textTertiary} />
+                : <Text style={[styles.mfaStatus, mfaEnabled && styles.mfaStatusOn]}>
+                    {mfaEnabled ? 'On' : 'Off'}
+                  </Text>
+              }
+              <ChevronRight size={16} color={colors.textTertiary} />
+            </View>
           </Pressable>
         </View>
 
@@ -515,6 +640,22 @@ export default function SettingsScreen() {
               <Trash size={16} color={colors.accent} />
               <Text style={[styles.rowText, { color: colors.accent }]}>Delete All Content</Text>
             </View>
+          </Pressable>
+        </View>
+
+        <Text style={styles.sectionLabel}>Help</Text>
+        <View style={styles.group}>
+          <Pressable style={styles.row} onPress={() => router.push('/support' as any)}>
+            <Text style={styles.rowText}>Support & Contact</Text>
+            <ChevronRight size={16} color={colors.textTertiary} />
+          </Pressable>
+        </View>
+
+        <Text style={styles.sectionLabel}>Legal</Text>
+        <View style={styles.group}>
+          <Pressable style={styles.row} onPress={() => Linking.openURL('https://throttlist.com/privacy')}>
+            <Text style={styles.rowText}>Terms & Privacy</Text>
+            <ChevronRight size={16} color={colors.textTertiary} />
           </Pressable>
         </View>
 
@@ -575,6 +716,8 @@ const styles = StyleSheet.create({
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rowText: { color: colors.textPrimary, fontSize: 15 },
   separator: { height: 1, backgroundColor: colors.border, marginLeft: 16 },
+  mfaStatus: { color: colors.textTertiary, fontSize: 14 },
+  mfaStatusOn: { color: '#22C55E', fontWeight: '600' },
   versionText: {
     color: colors.textTertiary,
     fontSize: 12,

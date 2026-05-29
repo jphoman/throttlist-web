@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { ArrowLeft } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { ThrottlistLogo } from '@/components/ThrottlistLogo'
 import { supabase } from '@/lib/supabase'
+import OtpInput from '@/components/OtpInput'
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
@@ -21,7 +22,21 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [step, setStep] = useState<'credentials' | 'mfa'>('credentials')
+  const [mfaFactorId, setMfaFactorId] = useState<string>('')
+  const [mfaChallengeId, setMfaChallengeId] = useState<string>('')
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaError, setMfaError] = useState<string | null>(null)
+  const [mfaVerifying, setMfaVerifying] = useState(false)
+
   const valid = email.trim().length > 0 && password.length >= 1
+
+  // Auto-verify MFA when 6 digits entered
+  useEffect(() => {
+    if (step === 'mfa' && mfaCode.length === 6 && !mfaVerifying) {
+      handleVerifyMfa(mfaCode)
+    }
+  }, [mfaCode, step])
 
   async function handleLogin() {
     setSubmitting(true)
@@ -32,12 +47,91 @@ export default function LoginScreen() {
         password,
       })
       if (signInError) throw signInError
+
+      // Check if 2FA is required
+      const { data: aal } = await (supabase.auth.mfa as any).getAuthenticatorAssuranceLevel()
+      if (aal?.nextLevel === 'aal2') {
+        const { data: factors } = await (supabase.auth.mfa as any).listFactors()
+        const totp = factors?.totp?.find((f: any) => f.status === 'verified')
+        if (totp) {
+          const { data: challengeData } = await (supabase.auth.mfa as any).challenge({ factorId: totp.id })
+          setMfaFactorId(totp.id)
+          setMfaChallengeId(challengeData.id)
+          setStep('mfa')
+          return
+        }
+      }
       router.replace('/feed')
     } catch (err: any) {
       setError(err.message ?? 'Login failed. Please try again.')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function handleVerifyMfa(otp: string) {
+    setMfaVerifying(true)
+    setMfaError(null)
+    try {
+      const { error } = await (supabase.auth.mfa as any).verify({
+        factorId: mfaFactorId,
+        challengeId: mfaChallengeId,
+        code: otp,
+      })
+      if (error) throw error
+      router.replace('/feed')
+    } catch (err: any) {
+      setMfaError(err?.message ?? 'Verification failed. Please try again.')
+      setMfaCode('')
+    } finally {
+      setMfaVerifying(false)
+    }
+  }
+
+  function handleBackToCredentials() {
+    setStep('credentials')
+    setMfaCode('')
+    setMfaError(null)
+    setMfaFactorId('')
+    setMfaChallengeId('')
+  }
+
+  if (step === 'mfa') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable onPress={handleBackToCredentials} style={styles.backBtn}>
+            <ArrowLeft size={20} color={colors.textSecondary} />
+          </Pressable>
+          <View style={{ width: 44 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.logoWrap}>
+            <ThrottlistLogo color={colors.accent} height={36} />
+          </View>
+          <Text style={styles.headline}>Two-Factor Auth</Text>
+          <Text style={styles.sub}>Enter the 6-digit code from your authenticator app.</Text>
+
+          <View style={styles.otpWrapper}>
+            <OtpInput value={mfaCode} onChange={setMfaCode} autoFocus />
+          </View>
+
+          {mfaVerifying && (
+            <View style={styles.verifyingRow}>
+              <ActivityIndicator size="small" color={colors.accent} />
+              <Text style={styles.verifyingText}>Verifying…</Text>
+            </View>
+          )}
+
+          {mfaError && <Text style={styles.errorText}>{mfaError}</Text>}
+
+          <Pressable onPress={handleBackToCredentials} style={styles.forgotBtn}>
+            <Text style={styles.forgotText}>← Back</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    )
   }
 
   return (
@@ -209,5 +303,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 12,
     textAlign: 'center',
+  },
+  otpWrapper: {
+    paddingTop: 8,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  verifyingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  verifyingText: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
 })

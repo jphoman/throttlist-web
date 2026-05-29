@@ -14,7 +14,7 @@ import Svg, { Path as SvgPath } from 'react-native-svg'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Search, MessageCircle, Heart, TrendingUp, ProBadge } from '@/components/Icons'
-import { fetchAllBuilds, fetchAllProfiles, fetchFeed } from '@/lib/supabaseQueries'
+import { fetchAllBuilds, fetchDiscoverUsers, fetchFeed } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
@@ -62,7 +62,8 @@ export default function DiscoverScreen() {
 
   const { data: recommendedUsers = [] } = useQuery({
     queryKey: ['discover-users', userId],
-    queryFn: () => fetchAllProfiles(10, userId || undefined),
+    queryFn: () => fetchDiscoverUsers(20, userId || undefined),
+    staleTime: 5 * 60_000, // re-rank at most every 5 min
   })
 
   const { data: posts = [] } = useQuery({
@@ -145,11 +146,15 @@ export default function DiscoverScreen() {
                   style={styles.userItem}
                   onPress={() => router.push(`/user/${user.username}`)}
                 >
-                  <InitialsAvatar name={user.displayName} photoUrl={user.avatarUrl} size={58} />
-                  <View style={styles.userHandleRow}>
-                    <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
-                    {(user.proTier === '1' || user.proTier === 1) && <ProBadge size={12} />}
+                  <View style={styles.userAvatarWrap}>
+                    <InitialsAvatar name={user.displayName} photoUrl={user.avatarUrl} size={72} />
+                    {(user.proTier === '1' || user.proTier === 1) && (
+                      <View style={styles.userProBadge}>
+                        <ProBadge size={16} />
+                      </View>
+                    )}
                   </View>
+                  <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
                 </Pressable>
               ))}
             </ScrollView>
@@ -333,13 +338,17 @@ const styles = StyleSheet.create({
   userItem: {
     alignItems: 'center',
     gap: 6,
-    width: 68,
+    width: 82,
   },
-  userHandleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
+  userAvatarWrap: {
+    position: 'relative',
+    width: 72,
+    height: 72,
+  },
+  userProBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
   },
   userHandle: {
     color: colors.textSecondary,

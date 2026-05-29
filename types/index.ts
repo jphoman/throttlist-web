@@ -7,6 +7,8 @@ export interface User {
   location?: string
   instagramHandle?: string
   youtubeHandle?: string
+  websiteUrl?: string
+  websiteTitle?: string
   proTier: string | number
   affiliateDisclosureDismissed: string | number
   createdAt: string

@@ -38,6 +38,8 @@ function mapProfile(row: any): User {
     location: row.location ?? undefined,
     instagramHandle: row.instagram_handle ?? undefined,
     youtubeHandle: row.youtube_handle ?? undefined,
+    websiteUrl: row.website_url ?? undefined,
+    websiteTitle: row.website_title ?? undefined,
     proTier: row.is_pro ? '1' : '0',
     affiliateDisclosureDismissed: '0',
     createdAt: row.created_at,
@@ -126,6 +128,8 @@ export async function updateProfile(userId: string, updates: {
   location?: string
   instagram_handle?: string
   youtube_handle?: string
+  website_url?: string | null
+  website_title?: string | null
   build_style?: string
 }): Promise<User | null> {
   const { data, error } = await supabase
@@ -228,6 +232,24 @@ export async function fetchFeed(limit = 20, offset = 0, excludeUserId?: string):
   const { data, error } = await query
   if (error || !data) return []
   return data.map(mapPost)
+}
+
+/** Returns true if any followed build has a post newer than sinceIso. */
+export async function fetchHasNewFeedPosts(userId: string, sinceIso: string): Promise<boolean> {
+  const { data: follows } = await supabase
+    .from('build_follows')
+    .select('build_id')
+    .eq('follower_id', userId)
+  const buildIds = (follows ?? []).map((r: any) => r.build_id)
+  if (buildIds.length === 0) return false
+  const { data } = await supabase
+    .from('posts')
+    .select('id')
+    .in('build_id', buildIds)
+    .neq('user_id', userId)
+    .gt('created_at', sinceIso)
+    .limit(1)
+  return (data ?? []).length > 0
 }
 
 export async function fetchFollowedFeed(userId: string, limit = 20, excludeUserId?: string): Promise<Post[]> {
@@ -519,6 +541,34 @@ export async function fetchAllProfiles(limit = 10, excludeUserId?: string): Prom
   return data.map(mapProfile)
 }
 
+/**
+ * Fetch users ranked by 14-day weighted interaction score:
+ *   tag clicks ×10, comments ×5, follows ×3, likes ×2, views ×1
+ */
+export async function fetchDiscoverUsers(limit = 20, excludeUserId?: string): Promise<User[]> {
+  const { data, error } = await (supabase as any).rpc('get_discover_users', {
+    p_limit:           limit,
+    p_exclude_user_id: excludeUserId ?? null,
+  })
+  if (error || !data) return []
+  return (data as any[]).map(row => mapProfile(row))
+}
+
+/** Fire-and-forget: record a product tag click for discover ranking. */
+export async function trackTagClick(
+  postId:     string,
+  buildId:    string | null,
+  userId:     string | null,
+  productUrl: string,
+): Promise<void> {
+  await supabase.from('tag_click_events').insert({
+    post_id:     postId,
+    build_id:    buildId   || null,
+    user_id:     userId    || null,
+    product_url: productUrl,
+  })
+}
+
 // ─── Comment queries ──────────────────────────────────────────────────────────
 
 export async function fetchComments(postId: string): Promise<Comment[]> {
@@ -606,22 +656,32 @@ export async function deletePost(postId: string): Promise<void> {
 
 export type Notification = {
   id: string
-  type: 'like' | 'comment' | 'follow'
+  type: 'like' | 'comment' | 'follow' | 'unfollow'
   actorUsername: string
   actorDisplayName: string
   actorAvatarUrl: string
+  actorIsPro?: boolean
   content: string
   postId?: string
   buildId?: string
+  thumbUrl?: string   // post photo or build cover photo
+  navPath?: string    // route to push when tapped
   createdAt: string
   read: boolean
+}
+
+function firstPhoto(photosJson: any): string {
+  try {
+    const arr = typeof photosJson === 'string' ? JSON.parse(photosJson) : photosJson
+    return Array.isArray(arr) && arr[0] ? arr[0] : ''
+  } catch { return '' }
 }
 
 export async function fetchNotifications(userId: string): Promise<Notification[]> {
   // Fetch user's post IDs first
   const { data: myPosts } = await supabase
     .from('posts')
-    .select('id, build_id, builds(nickname, slug, profiles(username))')
+    .select('id, build_id, photos, builds(nickname, slug, cover_photo_url, profiles(username))')
     .eq('user_id', userId)
     .limit(50)
 
@@ -632,7 +692,7 @@ export async function fetchNotifications(userId: string): Promise<Notification[]
   if (postIds.length > 0) {
     const { data: likes } = await supabase
       .from('likes')
-      .select('post_id, user_id, created_at, profiles!likes_user_id_fkey(username, display_name, avatar_url)')
+      .select('post_id, user_id, created_at, profiles!likes_user_id_fkey(username, display_name, avatar_url, is_pro)')
       .in('post_id', postIds)
       .neq('user_id', userId)
       .order('created_at', { ascending: false })
@@ -640,14 +700,19 @@ export async function fetchNotifications(userId: string): Promise<Notification[]
 
     for (const like of likes ?? []) {
       const post = (myPosts ?? []).find((p: any) => p.id === like.post_id)
+      const buildUsername = post?.builds?.profiles?.username ?? ''
+      const buildSlug = post?.builds?.slug ?? ''
       notifications.push({
         id: `like_${like.post_id}_${like.user_id}`,
         type: 'like',
         actorUsername: like.profiles?.username ?? '',
         actorDisplayName: like.profiles?.display_name ?? '',
         actorAvatarUrl: like.profiles?.avatar_url ?? '',
+        actorIsPro: like.profiles?.is_pro ?? false,
         content: `liked your post`,
         postId: like.post_id,
+        thumbUrl: firstPhoto(post?.photos) || post?.builds?.cover_photo_url || '',
+        navPath: like.post_id ? `/post/${like.post_id}` : (buildUsername && buildSlug ? `/build/${buildUsername}/${buildSlug}` : undefined),
         createdAt: like.created_at,
         read: false,
       })
@@ -656,21 +721,27 @@ export async function fetchNotifications(userId: string): Promise<Notification[]
     // Comments on user's posts
     const { data: comments } = await supabase
       .from('comments')
-      .select('id, post_id, body, user_id, created_at, profiles(username, display_name, avatar_url)')
+      .select('id, post_id, body, user_id, created_at, profiles(username, display_name, avatar_url, is_pro)')
       .in('post_id', postIds)
       .neq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30)
 
     for (const c of comments ?? []) {
+      const post = (myPosts ?? []).find((p: any) => p.id === c.post_id)
+      const buildUsername = post?.builds?.profiles?.username ?? ''
+      const buildSlug = post?.builds?.slug ?? ''
       notifications.push({
         id: `comment_${c.id}`,
         type: 'comment',
         actorUsername: c.profiles?.username ?? '',
         actorDisplayName: c.profiles?.display_name ?? '',
         actorAvatarUrl: c.profiles?.avatar_url ?? '',
+        actorIsPro: c.profiles?.is_pro ?? false,
         content: `commented: "${c.body.slice(0, 60)}${c.body.length > 60 ? '…' : ''}"`,
         postId: c.post_id,
+        thumbUrl: firstPhoto(post?.photos) || post?.builds?.cover_photo_url || '',
+        navPath: c.post_id ? `/post/${c.post_id}` : (buildUsername && buildSlug ? `/build/${buildUsername}/${buildSlug}` : undefined),
         createdAt: c.created_at,
         read: false,
       })
@@ -680,7 +751,7 @@ export async function fetchNotifications(userId: string): Promise<Notification[]
   // Follows on user's builds
   const { data: myBuilds } = await supabase
     .from('builds')
-    .select('id, nickname, slug')
+    .select('id, nickname, slug, cover_photo_url, profiles!builds_user_id_fkey(username)')
     .eq('user_id', userId)
     .eq('status', 'active')
 
@@ -688,21 +759,25 @@ export async function fetchNotifications(userId: string): Promise<Notification[]
   if (buildIds.length > 0) {
     const { data: follows } = await supabase
       .from('build_follows')
-      .select('build_id, follower_id, created_at, profiles!build_follows_follower_id_fkey(username, display_name, avatar_url)')
+      .select('build_id, follower_id, created_at, profiles!build_follows_follower_id_fkey(username, display_name, avatar_url, is_pro)')
       .in('build_id', buildIds)
       .order('created_at', { ascending: false })
       .limit(30)
 
     for (const f of follows ?? []) {
       const build = (myBuilds ?? []).find((b: any) => b.id === f.build_id)
+      const buildUsername = build?.profiles?.username ?? ''
       notifications.push({
         id: `follow_${f.build_id}_${f.follower_id}`,
         type: 'follow',
         actorUsername: f.profiles?.username ?? '',
         actorDisplayName: f.profiles?.display_name ?? '',
         actorAvatarUrl: f.profiles?.avatar_url ?? '',
+        actorIsPro: f.profiles?.is_pro ?? false,
         content: `started following ${build?.nickname ?? 'your build'}`,
         buildId: f.build_id,
+        thumbUrl: build?.cover_photo_url || '',
+        navPath: buildUsername && build?.slug ? `/build/${buildUsername}/${build.slug}` : undefined,
         createdAt: f.created_at,
         read: false,
       })

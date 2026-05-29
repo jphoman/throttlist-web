@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
-import { Instagram, Youtube, Settings, ChevronRight, Star, ProBadge, Plus } from '@/components/Icons'
+import { Instagram, Youtube, Link, Settings, ChevronRight, Star, ProBadge, Plus } from '@/components/Icons'
 import { fetchProfile, fetchUserBuilds, fetchFollowingCount, fetchCreatorFollowerCount, fetchBuildsByIds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
@@ -115,6 +115,20 @@ export default function ProfileScreen() {
                   <Text style={styles.socialHandle}>{user.youtubeHandle}</Text>
                 </Pressable>
               )}
+              {user.websiteUrl && (
+                <Pressable
+                  style={styles.socialLink}
+                  onPress={() => {
+                    const url = user.websiteUrl!.startsWith('http') ? user.websiteUrl! : `https://${user.websiteUrl}`
+                    Linking.openURL(url)
+                  }}
+                >
+                  <Link size={14} color={colors.textTertiary} />
+                  <Text style={styles.socialHandle} numberOfLines={1}>
+                    {user.websiteTitle || (() => { try { return new URL(user.websiteUrl!.startsWith('http') ? user.websiteUrl! : `https://${user.websiteUrl}`).hostname } catch { return user.websiteUrl } })()}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           </View>
         </View>
@@ -155,22 +169,26 @@ export default function ProfileScreen() {
                 style={styles.topBuildItem}
                 onPress={() => build.username && router.push(`/build/${build.username}/${build.slug}`)}
               >
-                <View style={styles.topBuildCircle}>
-                  {build.coverPhotoUrl ? (
-                    <Image source={{ uri: build.coverPhotoUrl }} style={styles.topBuildPhoto} />
-                  ) : (
-                    <View style={[styles.topBuildPhoto, styles.topBuildPhotoFallback]} />
+                <View style={styles.topBuildCircleWrap}>
+                  <View style={styles.topBuildCircle}>
+                    {build.coverPhotoUrl ? (
+                      <Image source={{ uri: build.coverPhotoUrl }} style={styles.topBuildPhoto} />
+                    ) : (
+                      <View style={[styles.topBuildPhoto, styles.topBuildPhotoFallback]} />
+                    )}
+                  </View>
+                  {build.ownerIsPro && (
+                    <View style={styles.topBuildProBadge}>
+                      <ProBadge size={14} />
+                    </View>
                   )}
                 </View>
                 <Text style={styles.topBuildName} numberOfLines={1}>
                   {build.nickname || `${build.year} ${build.make}`}
                 </Text>
-                <View style={styles.topBuildUsernameRow}>
-                  <Text style={styles.topBuildUsername} numberOfLines={1}>
-                    @{build.username}
-                  </Text>
-                  {build.ownerIsPro && <ProBadge size={10} />}
-                </View>
+                <Text style={styles.topBuildUsername} numberOfLines={1}>
+                  @{build.username}
+                </Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -363,6 +381,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 80,
   },
+  topBuildCircleWrap: {
+    position: 'relative',
+    marginBottom: 6,
+  },
   topBuildCircle: {
     width: 72,
     height: 72,
@@ -370,7 +392,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.surface3,
-    marginBottom: 6,
+  },
+  topBuildProBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
   },
   topBuildPhoto: {
     width: '100%',
@@ -385,13 +411,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     width: '100%',
-  },
-  topBuildUsernameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    marginTop: 1,
   },
   topBuildUsername: {
     color: colors.textTertiary,
