@@ -6,7 +6,6 @@ module.exports = function (api) {
         'babel-preset-expo',
         {
           unstable_transformImportMeta: true,
-          unstable_transformProfile: 'hermes-v0',
         },
       ],
     ],
