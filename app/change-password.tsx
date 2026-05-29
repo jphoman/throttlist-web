@@ -74,7 +74,7 @@ export default function ChangePasswordScreen() {
     setResetSending(true)
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://throttlist.com',
+        redirectTo: Platform.OS === 'web' ? 'https://throttlist.com/reset-password' : 'throttlist://reset-password',
       })
       if (resetErr) throw resetErr
       setResetSent(true)

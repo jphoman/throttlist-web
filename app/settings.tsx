@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
+import * as ImagePicker from 'expo-image-picker'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -147,6 +148,44 @@ export default function SettingsScreen() {
     } finally {
       setAvatarUploading(false)
       e.target.value = ''
+    }
+  }
+
+  async function handleAvatarPickNative() {
+    if (!userId) return
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      setAvatarError('Photo library access is required to change your photo.')
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    })
+    if (result.canceled || !result.assets?.[0]) return
+    const asset = result.assets[0]
+    setAvatarUploading(true)
+    setAvatarError(null)
+    try {
+      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const path = `${userId}/avatar-${Date.now()}.${ext}`
+      const response = await fetch(asset.uri)
+      const blob = await response.blob()
+      const { error: storageError } = await supabase.storage
+        .from('posts')
+        .upload(path, blob, { contentType: `image/${ext}`, upsert: true })
+      if (storageError) throw storageError
+      const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+      setLocalAvatarUrl(publicUrl)
+      await updateProfile(userId, { avatar_url: publicUrl })
+      queryClient.invalidateQueries({ queryKey: ['profile', userId] })
+    } catch (err: any) {
+      console.error('Avatar upload failed', err)
+      setAvatarError(err?.message ?? 'Upload failed. Please try again.')
+    } finally {
+      setAvatarUploading(false)
     }
   }
 
@@ -417,9 +456,15 @@ export default function SettingsScreen() {
                 </label>
               </>
             ) : (
-              <Pressable style={styles.changePhotoBtn}>
+              <Pressable
+                style={[styles.changePhotoBtn, avatarUploading && { opacity: 0.5 }]}
+                onPress={handleAvatarPickNative}
+                disabled={avatarUploading}
+              >
                 <Camera size={14} color={colors.accent} />
-                <Text style={styles.changePhotoText}>Change photo</Text>
+                <Text style={styles.changePhotoText}>
+                  {avatarUploading ? 'Uploading…' : 'Change photo'}
+                </Text>
               </Pressable>
             )}
             {avatarError ? (

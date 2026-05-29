@@ -14,10 +14,9 @@ import { ArrowLeft } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { supabase } from '@/lib/supabase'
 
-const RESET_REDIRECT =
-  typeof window !== 'undefined'
-    ? `${window.location.origin}/reset-password`
-    : 'http://localhost:3000/reset-password'
+const RESET_REDIRECT = Platform.OS === 'web'
+  ? (typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : 'https://throttlist.com/reset-password')
+  : 'throttlist://reset-password'
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('')
