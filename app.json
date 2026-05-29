@@ -11,21 +11,26 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#ED1F24"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.blink.expostarter"
+      "bundleIdentifier": "com.throttlist.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Throttlist needs access to your photos so you can add images to your build posts and profile."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#ED1F24"
       },
-      "package": "com.blink.expostarter"
+      "package": "com.throttlist.app"
     },
     "web": {
       "bundler": "metro",
