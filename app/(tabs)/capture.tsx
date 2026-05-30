@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { router } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
+import { CameraView, useCameraPermissions } from 'expo-camera'
 import { useQuery } from '@tanstack/react-query'
 import { X, Zap, Settings, Gallery, Plus, Clock, Crop, Grid, Sliders } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
@@ -22,6 +23,7 @@ export default function CaptureScreen() {
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
 
+  const [permission, requestPermission] = useCameraPermissions()
   const [flash, setFlash] = useState(false)
   const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null)
   const cameraRef = useRef<any>(null)
@@ -49,6 +51,13 @@ export default function CaptureScreen() {
       setSelectedBuildId(myBuilds[0].id)
     }
   }, [myBuilds])
+
+  // Request camera permission on native when screen mounts
+  useEffect(() => {
+    if (Platform.OS !== 'web' && permission && !permission.granted) {
+      requestPermission()
+    }
+  }, [permission])
 
   // Start rear camera on web
   useEffect(() => {
@@ -78,7 +87,6 @@ export default function CaptureScreen() {
 
   function navigateWithPhoto(photoUri: string) {
     if (myBuilds.length === 0) {
-      // No builds yet — go create one first, passing the photo along
       router.push({
         pathname: '/add-build',
         params: { returnTo: 'compose', photoUri },
@@ -95,13 +103,11 @@ export default function CaptureScreen() {
     const file = e.target.files?.[0]
     if (!file) return
     const uri = URL.createObjectURL(file)
-    // Reset so the same file can be picked again later
     e.target.value = ''
     navigateWithPhoto(uri)
   }
 
   async function handlePickFromGallery() {
-    // Native (iOS/Android) — web uses the inline <input> overlay instead
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -113,7 +119,7 @@ export default function CaptureScreen() {
     }
   }
 
-  function captureNow() {
+  async function captureNow() {
     if (Platform.OS === 'web') {
       const video = cameraRef.current?.querySelector('video') as HTMLVideoElement | null
       if (!video) { handlePickFromGallery(); return }
@@ -125,11 +131,22 @@ export default function CaptureScreen() {
       navigateWithPhoto(dataUrl)
       return
     }
+    // Native — take a photo with the camera
+    if (cameraRef.current) {
+      try {
+        const photo = await cameraRef.current.takePictureAsync({ quality: 0.85, skipProcessing: false })
+        if (photo?.uri) {
+          navigateWithPhoto(photo.uri)
+          return
+        }
+      } catch {
+        // fall through to gallery
+      }
+    }
     handlePickFromGallery()
   }
 
   async function handleShutter() {
-    // Close settings if open
     setSettingsOpen(false)
     setActiveSetting(null)
 
@@ -160,20 +177,11 @@ export default function CaptureScreen() {
   }
 
   function handleSettingKey(key: 'timer' | 'aspect' | 'grid' | 'hdr') {
-    if (key === 'grid') {
-      setGridEnabled(v => !v)
-      setActiveSetting(null)
-      return
-    }
-    if (key === 'hdr') {
-      setHdrEnabled(v => !v)
-      setActiveSetting(null)
-      return
-    }
+    if (key === 'grid') { setGridEnabled(v => !v); setActiveSetting(null); return }
+    if (key === 'hdr') { setHdrEnabled(v => !v); setActiveSetting(null); return }
     setActiveSetting(prev => prev === key ? null : key)
   }
 
-  // Gate: no builds yet — show full-screen prompt, block camera entirely
   const hasNoBuilds = !buildsLoading && userId && myBuilds.length === 0
 
   if (hasNoBuilds) {
@@ -196,9 +204,40 @@ export default function CaptureScreen() {
     )
   }
 
+  // Native: show permission prompt if not granted
+  if (Platform.OS !== 'web' && permission && !permission.granted) {
+    return (
+      <View style={styles.gate}>
+        <Pressable style={styles.closeGate} onPress={() => router.replace('/(tabs)/feed')}>
+          <X size={22} color="rgba(255,255,255,0.6)" />
+        </Pressable>
+        <View style={styles.gateCard}>
+          <Text style={styles.gateTitle}>Camera access needed</Text>
+          <Text style={styles.gateSub}>Throttlist needs camera access to take photos of your build.</Text>
+          <Pressable
+            style={[styles.gatePlus, { marginTop: 8, width: 'auto', paddingHorizontal: 24, borderRadius: 12 }]}
+            onPress={requestPermission}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Allow Camera</Text>
+          </Pressable>
+        </View>
+      </View>
+    )
+  }
+
   return (
     <View style={styles.root}>
-      <View ref={cameraRef} style={styles.camera} />
+      {/* Camera viewfinder */}
+      {Platform.OS === 'web' ? (
+        <View ref={cameraRef} style={styles.camera} />
+      ) : (
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          facing="back"
+          flash={flash ? 'on' : 'off'}
+        />
+      )}
 
       {/* Grid overlay */}
       {gridEnabled && (
@@ -233,9 +272,7 @@ export default function CaptureScreen() {
       {/* Settings panel */}
       {settingsOpen && (
         <View style={styles.settingsPanel}>
-          {/* Row 1: setting icons */}
           <View style={styles.settingsRow}>
-            {/* Timer */}
             <Pressable
               style={[styles.settingBtn, activeSetting === 'timer' && styles.settingBtnActive]}
               onPress={() => handleSettingKey('timer')}
@@ -245,8 +282,6 @@ export default function CaptureScreen() {
                 {timer === 'off' ? 'Timer' : `${timer}s`}
               </Text>
             </Pressable>
-
-            {/* Aspect Ratio */}
             <Pressable
               style={[styles.settingBtn, activeSetting === 'aspect' && styles.settingBtnActive]}
               onPress={() => handleSettingKey('aspect')}
@@ -256,8 +291,6 @@ export default function CaptureScreen() {
                 {aspectRatio}
               </Text>
             </Pressable>
-
-            {/* Grid */}
             <Pressable
               style={[styles.settingBtn, gridEnabled && styles.settingBtnActive]}
               onPress={() => handleSettingKey('grid')}
@@ -265,8 +298,6 @@ export default function CaptureScreen() {
               <Grid size={18} color={gridEnabled ? colors.accent : '#fff'} />
               <Text style={[styles.settingLabel, gridEnabled && styles.settingLabelActive]}>Grid</Text>
             </Pressable>
-
-            {/* HDR */}
             <Pressable
               style={[styles.settingBtn, hdrEnabled && styles.settingBtnActive]}
               onPress={() => handleSettingKey('hdr')}
@@ -276,7 +307,6 @@ export default function CaptureScreen() {
             </Pressable>
           </View>
 
-          {/* Row 2: sub-options */}
           {activeSetting === 'timer' && (
             <View style={styles.subRow}>
               {(['off', '3', '10'] as const).map(v => (
@@ -311,35 +341,13 @@ export default function CaptureScreen() {
         </View>
       )}
 
-      {/* Gallery — bottom left */}
+      {/* Gallery */}
       {Platform.OS === 'web' ? (
-        // On web, use a hidden <input> + <label htmlFor> — the canonical pattern for
-        // custom file-upload buttons. Works on mobile Safari where programmatic
-        // input.click() is blocked by the browser's security sandbox.
         <>
-          {/* @ts-ignore – raw HTML elements are valid in React Native Web */}
-          <input
-            id="gallery-file-input"
-            type="file"
-            accept="image/*"
-            onChange={handleWebFileChange}
-            style={{ display: 'none' }}
-          />
           {/* @ts-ignore */}
-          <label
-            htmlFor="gallery-file-input"
-            style={{
-              position: 'absolute',
-              bottom: 36,
-              left: 32,
-              padding: 8,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10,
-            }}
-          >
+          <input id="gallery-file-input" type="file" accept="image/*" onChange={handleWebFileChange} style={{ display: 'none' }} />
+          {/* @ts-ignore */}
+          <label htmlFor="gallery-file-input" style={{ position: 'absolute', bottom: 36, left: 32, padding: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
             <Gallery size={28} color="#fff" />
           </label>
         </>
@@ -349,33 +357,21 @@ export default function CaptureScreen() {
         </Pressable>
       )}
 
-      {/* Shutter — centered */}
+      {/* Shutter */}
       <Pressable style={styles.shutter} onPress={handleShutter}>
         <View style={styles.shutterInner} />
       </Pressable>
 
-      {/* Build selector — bottom right */}
+      {/* Build selector */}
       <View style={styles.buildScrollWrap}>
-        <ScrollView
-          style={styles.buildScroll}
-          contentContainerStyle={styles.buildList}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView style={styles.buildScroll} contentContainerStyle={styles.buildList} showsVerticalScrollIndicator={false}>
           {myBuilds.map(build => {
             const isSelected = build.id === selectedBuildId
             return (
-              <Pressable
-                key={build.id}
-                style={styles.buildItem}
-                onPress={() => setSelectedBuildId(build.id)}
-              >
-                {/* Ring (border) is on the outer View — no opacity so the border stays crisp */}
+              <Pressable key={build.id} style={styles.buildItem} onPress={() => setSelectedBuildId(build.id)}>
                 <View style={[styles.buildRing, isSelected && styles.buildRingSelected]}>
                   {build.coverPhotoUrl ? (
-                    <Image
-                      source={{ uri: build.coverPhotoUrl }}
-                      style={[styles.buildThumbImg, !isSelected && styles.buildThumbDimmed]}
-                    />
+                    <Image source={{ uri: build.coverPhotoUrl }} style={[styles.buildThumbImg, !isSelected && styles.buildThumbDimmed]} />
                   ) : (
                     <View style={[styles.buildThumbFallback, !isSelected && styles.buildThumbDimmed]}>
                       <InitialsAvatar name={build.nickname || build.model} size={38} />
@@ -388,11 +384,7 @@ export default function CaptureScreen() {
               </Pressable>
             )
           })}
-          {/* Always show + to add another build */}
-          <Pressable
-            style={styles.buildItem}
-            onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}
-          >
+          <Pressable style={styles.buildItem} onPress={() => router.push({ pathname: '/add-build', params: { returnTo: 'capture' } })}>
             <View style={styles.buildThumbAdd}>
               <Plus size={20} color={colors.textTertiary} />
             </View>
@@ -420,20 +412,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center',
   },
+  iconBtnActive: { backgroundColor: 'rgba(255,255,255,0.15)' },
   galleryBtn: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 56 : 36,
-    left: 32,
-    padding: 8,
-    zIndex: 10,
+    left: 32, padding: 8, zIndex: 10,
   },
   shutter: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
     alignSelf: 'center',
-    width: 76,          // constrain hit area to the circle — not full-width
-    alignItems: 'center',
-    zIndex: 5,
+    width: 76, alignItems: 'center', zIndex: 5,
   },
   shutterInner: {
     width: 76, height: 76, borderRadius: 38,
@@ -443,27 +432,18 @@ const styles = StyleSheet.create({
   buildScrollWrap: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 48 : 28,
-    right: 16,
-    maxHeight: 300,
-    width: 68,
+    right: 16, maxHeight: 300, width: 68,
   },
   buildScroll: { width: 68 },
   buildList: { gap: 10, alignItems: 'flex-end', paddingBottom: 4 },
   buildItem: { alignItems: 'center', gap: 3 },
-  // Outer ring — holds border, no opacity so the outline stays crisp
   buildRing: {
     width: 46, height: 46, borderRadius: 23,
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
     overflow: 'hidden',
   },
-  buildRingSelected: {
-    borderColor: colors.accent,
-  },
-  // Inner image fills the ring
-  buildThumbImg: {
-    width: '100%', height: '100%',
-  },
-  // Dimmed state applied only to the inner content, not the border
+  buildRingSelected: { borderColor: colors.accent },
+  buildThumbImg: { width: '100%', height: '100%' },
   buildThumbDimmed: { opacity: 0.5 },
   buildThumbFallback: {
     width: '100%', height: '100%',
@@ -473,155 +453,67 @@ const styles = StyleSheet.create({
   buildThumbAdd: {
     width: 46, height: 46, borderRadius: 23,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center', justifyContent: 'center',
   },
   buildName: { color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: '600', textAlign: 'center', width: 58 },
   buildNameSelected: { color: '#fff' },
-  iconBtnActive: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
   settingsPanel: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 54 + 52 : 20 + 52,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    gap: 10,
+    left: 0, right: 0,
+    paddingHorizontal: 16, gap: 10,
   },
   settingsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
+    flexDirection: 'row', justifyContent: 'center', gap: 8,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12,
   },
-  settingBtn: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  settingBtnActive: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  settingLabel: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  settingLabelActive: {
-    color: colors.accent,
-  },
+  settingBtn: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 6, borderRadius: 8 },
+  settingBtnActive: { backgroundColor: 'rgba(255,255,255,0.1)' },
+  settingLabel: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  settingLabelActive: { color: colors.accent },
   subRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
+    flexDirection: 'row', justifyContent: 'center', gap: 8,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12,
   },
   chip: {
-    paddingHorizontal: 18,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 18, paddingVertical: 7, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
   },
-  chipActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  chipText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#fff',
-  },
-  gridOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-  },
-  gridLineH: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
-  gridLineV: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
+  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  chipTextActive: { color: '#fff' },
+  gridOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-evenly', alignItems: 'center' },
+  gridLineH: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
+  gridLineV: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    zIndex: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 20,
   },
   countdownText: {
-    color: '#fff',
-    fontSize: 96,
-    fontWeight: '700',
+    color: '#fff', fontSize: 96, fontWeight: '700',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 8,
   },
-  gate: {
-    flex: 1,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  closeGate: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 54 : 20,
-    left: 16,
-    padding: 10,
-  },
+  gate: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  closeGate: { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 20, left: 16, padding: 10 },
   gateCard: {
-    alignItems: 'center',
-    gap: 16,
+    alignItems: 'center', gap: 16,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    paddingVertical: 40,
-    paddingHorizontal: 36,
-    width: '100%',
-    maxWidth: 320,
+    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 40, paddingHorizontal: 36,
+    width: '100%', maxWidth: 320,
   },
   gatePlus: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: colors.accent,
     alignItems: 'center', justifyContent: 'center',
   },
-  gateTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 28,
-  },
-  gateSub: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 19,
-  },
+  gateTitle: { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center', lineHeight: 28 },
+  gateSub: { color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center', lineHeight: 19 },
 })

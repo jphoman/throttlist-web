@@ -22,7 +22,8 @@
       "buildNumber": "3",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "Throttlist needs access to your photos so you can add images to your build posts and profile."
+        "NSPhotoLibraryUsageDescription": "Throttlist needs access to your photos so you can add images to your build posts and profile.",
+        "NSCameraUsageDescription": "Throttlist needs access to your camera so you can take photos of your build."
       }
     },
     "android": {
@@ -42,6 +43,12 @@
       "expo-router",
       "expo-font",
       "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Throttlist needs access to your camera so you can take photos of your build."
+        }
+      ],
       [
         "expo-image-picker",
         {
