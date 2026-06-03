@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   View,
   Text,
@@ -8,27 +8,40 @@ import {
   TextInput,
   Platform,
   ActivityIndicator,
+  Animated,
+  Easing,
+  Image,
 } from 'react-native'
 import { router } from 'expo-router'
-import { ArrowLeft, CheckCircle, ChevronRight } from '@/components/Icons'
+import { ArrowLeft, CheckCircle, ChevronRight, Send } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { ThrottlistLogo } from '@/components/ThrottlistLogo'
 import { supabase } from '@/lib/supabase'
 
-type Step = 'account' | 'terms' | 'build'
+type Step = 'account' | 'terms' | 'confirm'
 
-const CURRENT_YEAR = new Date().getFullYear()
-const YEARS = Array.from({ length: 60 }, (_, i) => String(CURRENT_YEAR - i))
+const CARD_W = 130
+const CARD_H = 100
+const CARD_GAP = 10
+const CARD_STEP = CARD_W + CARD_GAP
 
-const BUILD_STYLES = [
-  { id: 'cafe_racer', label: 'Café Racer', icon: '⚡' },
-  { id: 'scrambler', label: 'Scrambler', icon: '🏕️' },
-  { id: 'tracker', label: 'Tracker', icon: '🏁' },
-  { id: 'bobber', label: 'Bobber', icon: '🔩' },
-  { id: 'chopper', label: 'Chopper', icon: '🛠️' },
-  { id: 'adventure', label: 'Adventure', icon: '🏔️' },
-  { id: 'bagger', label: 'Bagger', icon: '🛣️' },
-  { id: 'other', label: 'Other', icon: '🏍️' },
+// Fallback cards shown when builds have no cover photo or DB returns nothing
+const FALLBACK_COLORS = [
+  '#1a1a1a', '#1e1e1e', '#222222', '#252525',
+  '#191919', '#1c1c1c', '#202020', '#232323',
+]
+
+const CATEGORY_PLACEHOLDERS: ShowcaseItem[] = [
+  { id: 'p1',  coverPhotoUrl: null, label: 'Café Racer' },
+  { id: 'p2',  coverPhotoUrl: null, label: 'Scrambler' },
+  { id: 'p3',  coverPhotoUrl: null, label: 'Tracker' },
+  { id: 'p4',  coverPhotoUrl: null, label: 'Bobber' },
+  { id: 'p5',  coverPhotoUrl: null, label: 'Chopper' },
+  { id: 'p6',  coverPhotoUrl: null, label: 'Adventure' },
+  { id: 'p7',  coverPhotoUrl: null, label: 'Bagger' },
+  { id: 'p8',  coverPhotoUrl: null, label: 'Supermoto' },
+  { id: 'p9',  coverPhotoUrl: null, label: 'Street Fighter' },
+  { id: 'p10', coverPhotoUrl: null, label: 'Naked Bike' },
 ]
 
 const TC_TEXT = `THROTTLIST TERMS & CONDITIONS
@@ -98,75 +111,161 @@ function Field({
   )
 }
 
+// ─── Infinite-scroll row ─────────────────────────────────────────────────────
+interface ShowcaseItem {
+  id: string
+  coverPhotoUrl: string | null
+  label: string
+}
+
+function ScrollRow({ items, duration, reverse }: {
+  items: ShowcaseItem[]
+  duration: number
+  reverse?: boolean
+}) {
+  const anim = useRef(new Animated.Value(0)).current
+  const doubled = [...items, ...items] // duplicate for seamless loop
+  const totalW = CARD_STEP * items.length
+
+  useEffect(() => {
+    if (items.length === 0) return
+    // reverse rows start from -totalW so they appear to scroll right
+    if (reverse) anim.setValue(-totalW)
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: reverse ? 0 : -totalW,
+        duration,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    )
+    loop.start()
+    return () => loop.stop()
+  }, [items.length])
+
+  if (items.length === 0) return null
+
+  return (
+    <View style={styles.rowClip}>
+      <Animated.View style={[styles.rowTrack, { transform: [{ translateX: anim }] }]}>
+        {doubled.map((item, i) => (
+          <View key={`${item.id}-${i}`} style={styles.card}>
+            {item.coverPhotoUrl ? (
+              <Image
+                source={{ uri: item.coverPhotoUrl }}
+                style={styles.cardImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.cardImage, { backgroundColor: FALLBACK_COLORS[i % FALLBACK_COLORS.length] }]} />
+            )}
+            <View style={styles.cardLabel}>
+              <Text style={styles.cardLabelText} numberOfLines={1}>{item.label}</Text>
+            </View>
+          </View>
+        ))}
+      </Animated.View>
+    </View>
+  )
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 export default function SignupScreen() {
   const [step, setStep] = useState<Step>('account')
 
-  // Account step
+  // Account fields
   const [displayName, setDisplayName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
-  // Terms step
+  // Terms
   const [accepted, setAccepted] = useState(false)
-
-  // Build step
-  const [buildYear, setBuildYear] = useState('')
-  const [buildMake, setBuildMake] = useState('')
-  const [buildModel, setBuildModel] = useState('')
-  const [buildNickname, setBuildNickname] = useState('')
-  const [buildStyle, setBuildStyle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Confirm
+  const [resending, setResending] = useState(false)
+  const [resent, setResent] = useState(false)
+  const [row1, setRow1] = useState<ShowcaseItem[]>(CATEGORY_PLACEHOLDERS.slice(0, 8))
+  const [row2, setRow2] = useState<ShowcaseItem[]>([...CATEGORY_PLACEHOLDERS.slice(3), ...CATEGORY_PLACEHOLDERS.slice(0, 1)])
+  const [row3, setRow3] = useState<ShowcaseItem[]>([...CATEGORY_PLACEHOLDERS.slice(6), ...CATEGORY_PLACEHOLDERS.slice(0, 4)])
+
   const accountValid = displayName.trim() && username.trim() && email.trim() && password.length >= 8
+
+  // Fetch showcase builds when entering confirm step
+  useEffect(() => {
+    if (step !== 'confirm') return
+    supabase
+      .from('builds')
+      .select('id, cover_photo_url, nickname, make, model, build_type')
+      .not('cover_photo_url', 'is', null)
+      .limit(36)
+      .then(({ data }) => {
+        const items: ShowcaseItem[] = (data ?? []).map((b: any) => ({
+          id: b.id,
+          coverPhotoUrl: b.cover_photo_url,
+          label: b.nickname || `${b.make} ${b.model}`,
+        }))
+        // Pad with placeholders so each row has at least 8 items
+        const pad = (arr: ShowcaseItem[], start: number): ShowcaseItem[] => {
+          const needed = Math.max(8, arr.length)
+          while (arr.length < needed) {
+            arr.push({ id: `ph-${start + arr.length}`, coverPhotoUrl: null, label: '' })
+          }
+          return arr
+        }
+        // If not enough real builds, fill with category placeholders
+        const source = items.length >= 12 ? items : [
+          ...items,
+          ...CATEGORY_PLACEHOLDERS.slice(0, Math.max(0, 24 - items.length)),
+        ]
+        const chunkSize = Math.ceil(source.length / 3) || 8
+        setRow1(pad([...source.slice(0, chunkSize)], 0))
+        setRow2(pad([...source.slice(chunkSize, chunkSize * 2)], chunkSize))
+        setRow3(pad([...source.slice(chunkSize * 2)], chunkSize * 2))
+      })
+  }, [step])
 
   function handleBack() {
     if (step === 'account') { router.back(); return }
     if (step === 'terms') { setStep('account'); return }
-    if (step === 'build') { setStep('terms'); return }
+    // On confirm, back goes to feed (already created account)
+    router.replace('/feed')
   }
 
   async function handleNext() {
     if (step === 'account') { setStep('terms'); return }
-    if (step === 'terms' && accepted) { setStep('build'); return }
-    if (step === 'build') {
+    if (step === 'terms' && accepted) {
       setSubmitting(true)
       setError(null)
       try {
-        const { data, error: signUpError } = await supabase.auth.signUp({
+        const { error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
             data: {
               username: username.trim().toLowerCase(),
               display_name: displayName.trim(),
-              build_style: buildStyle || null,
             },
           },
         })
         if (signUpError) throw signUpError
-
-        // If user has a build to add, insert it after sign-up
-        if (data.user && buildMake.trim()) {
-          await supabase.from('builds').insert({
-            user_id: data.user.id,
-            year: buildYear ? parseInt(buildYear) : null,
-            make: buildMake.trim(),
-            model: buildModel.trim(),
-            nickname: buildNickname.trim() || null,
-            build_type: buildStyle || null,
-            slug: `${buildMake.trim().toLowerCase().replace(/\s+/g, '-')}-${buildModel.trim().toLowerCase().replace(/\s+/g, '-')}`,
-          })
-        }
-
-        router.replace('/feed')
+        setStep('confirm')
       } catch (err: any) {
         setError(err.message ?? 'Something went wrong. Please try again.')
       } finally {
         setSubmitting(false)
       }
     }
+  }
+
+  async function handleResend() {
+    setResending(true)
+    await supabase.auth.resend({ type: 'signup', email: email.trim() })
+    setResending(false)
+    setResent(true)
+    setTimeout(() => setResent(false), 4000)
   }
 
   const stepIndex = step === 'account' ? 0 : step === 'terms' ? 1 : 2
@@ -188,6 +287,7 @@ export default function SignupScreen() {
         ))}
       </View>
 
+      {/* ── Page 1: Account ── */}
       {step === 'account' && (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.logoWrap}>
@@ -230,6 +330,7 @@ export default function SignupScreen() {
         </ScrollView>
       )}
 
+      {/* ── Page 2: Terms ── */}
       {step === 'terms' && (
         <View style={styles.termsWrap}>
           <Text style={styles.headline}>Terms & Conditions</Text>
@@ -243,58 +344,65 @@ export default function SignupScreen() {
             </View>
             <Text style={styles.checkLabel}>I have read and agree to the Terms & Conditions</Text>
           </Pressable>
+          {error && <Text style={styles.errorText}>{error}</Text>}
           <Pressable
-            style={[styles.primaryBtn, !accepted && styles.primaryBtnDim]}
+            style={[styles.primaryBtn, (!accepted || submitting) && styles.primaryBtnDim]}
             onPress={handleNext}
-            disabled={!accepted}
+            disabled={!accepted || submitting}
           >
-            <Text style={styles.primaryBtnText}>Accept & Continue</Text>
+            {submitting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.primaryBtnText}>Accept & Continue</Text>
+            }
           </Pressable>
         </View>
       )}
 
-      {step === 'build' && (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.headline}>Add your first build</Text>
-          <Text style={styles.sub}>You can add more builds from your profile.</Text>
+      {/* ── Page 3: Confirm email ── */}
+      {step === 'confirm' && (
+        <View style={styles.confirmWrap}>
+          {/* Message card */}
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconRing}>
+              <Send size={28} color={colors.accent} />
+            </View>
+            <Text style={styles.confirmHeadline}>Check your inbox</Text>
+            <Text style={styles.confirmBody}>
+              {'We sent a confirmation link to\n'}
+              <Text style={styles.confirmEmail}>{email.trim()}</Text>
+            </Text>
+            <Text style={styles.confirmHint}>
+              Click the link in the email to verify your account and unlock full access.
+            </Text>
 
-          <View style={styles.form}>
-            <Field value={buildYear} onChangeText={setBuildYear} placeholder="YEAR" keyboardType="default" autoCapitalize="none" />
-            <Field value={buildMake} onChangeText={setBuildMake} placeholder="MAKE" autoCapitalize="words" />
-            <Field value={buildModel} onChangeText={setBuildModel} placeholder="MODEL" autoCapitalize="words" />
-            <Field value={buildNickname} onChangeText={setBuildNickname} placeholder="NICKNAME (OPTIONAL)" autoCapitalize="words" />
-
-            <Text style={[styles.fieldLabel, { marginTop: 4 }]}>Build style</Text>
-            <View style={styles.styleGrid}>
-              {BUILD_STYLES.map(s => (
-                <Pressable
-                  key={s.id}
-                  style={[styles.styleCard, buildStyle === s.id && styles.styleCardSelected]}
-                  onPress={() => setBuildStyle(s.id)}
-                >
-                  <Text style={styles.styleIcon}>{s.icon}</Text>
-                  <Text style={[styles.styleLabel, buildStyle === s.id && styles.styleLabelSelected]}>
-                    {s.label}
+            <Pressable onPress={handleResend} disabled={resending || resent} style={styles.resendBtn}>
+              {resending
+                ? <ActivityIndicator size="small" color={colors.accent} />
+                : <Text style={[styles.resendText, resent && styles.resendTextSent]}>
+                    {resent ? '✓ Email sent' : 'Resend email'}
                   </Text>
-                </Pressable>
-              ))}
+              }
+            </Pressable>
+          </View>
+
+          {/* Animated build showcase */}
+          <View style={styles.showcaseWrap}>
+            <Text style={styles.showcaseLabel}>See what's being built</Text>
+            <View style={styles.rows}>
+              <ScrollRow items={row1} duration={20000} />
+              <ScrollRow items={row2} duration={25000} reverse />
+              <ScrollRow items={row3} duration={18000} />
             </View>
           </View>
 
-          {error && <Text style={styles.errorText}>{error}</Text>}
-          <Pressable
-            style={[styles.primaryBtn, submitting && styles.primaryBtnDim]}
-            onPress={handleNext}
-            disabled={submitting}
-          >
-            {submitting
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.primaryBtnText}>
-                  {buildMake.trim() ? 'Finish & go to feed' : 'Skip for now'}
-                </Text>
-            }
-          </Pressable>
-        </ScrollView>
+          {/* CTA */}
+          <View style={styles.confirmFooter}>
+            <Pressable style={styles.primaryBtn} onPress={() => router.replace('/feed')}>
+              <Text style={styles.primaryBtnText}>Continue to explore</Text>
+              <ChevronRight size={18} color="#fff" />
+            </Pressable>
+          </View>
+        </View>
       )}
     </View>
   )
@@ -323,24 +431,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 8, height: 8, borderRadius: 4,
     backgroundColor: colors.surface3,
   },
-  dotActive: {
-    backgroundColor: colors.accent,
-  },
+  dotActive: { backgroundColor: colors.accent },
+
+  // Page 1 & shared
   content: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
-  logoWrap: {
-    alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 16,
-  },
+  logoWrap: { alignItems: 'center', marginTop: 24, marginBottom: 16 },
   sub: {
     color: colors.textSecondary,
     fontSize: 14,
@@ -355,22 +457,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  termsLink: {
-    color: colors.accent,
-    textDecorationLine: 'underline',
-  },
-  form: {
-    gap: 16,
-    marginBottom: 28,
-  },
+  termsLink: { color: colors.accent, textDecorationLine: 'underline' },
+  form: { gap: 16, marginBottom: 28 },
   field: { gap: 6 },
-  fieldLabel: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
   fieldInput: {
     backgroundColor: colors.surface1,
     borderWidth: 1,
@@ -392,32 +481,22 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryBtnDim: { opacity: 0.4 },
-  primaryBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  switchText: {
-    color: colors.textTertiary,
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  switchText: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', marginBottom: 12 },
   loginBtn: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 10,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    borderWidth: 1, borderColor: colors.accent, borderRadius: 10,
+    paddingVertical: 15, alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  loginBtnText: {
-    color: colors.accent,
-    fontSize: 16,
+  loginBtnText: { color: colors.accent, fontSize: 16, fontWeight: '700' },
+  errorText: { color: '#f87171', fontSize: 13, marginBottom: 12, textAlign: 'center' },
+  headline: {
+    color: colors.textPrimary,
+    fontSize: 22,
     fontWeight: '700',
+    marginBottom: 6,
   },
-  // Terms
+
+  // Page 2: Terms
   termsWrap: {
     flex: 1,
     paddingHorizontal: 20,
@@ -433,70 +512,105 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 14,
   },
-  tcText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
+  tcText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.surface3,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  checkRow: {
-    flexDirection: 'row',
+  checkboxChecked: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkLabel: { color: colors.textSecondary, fontSize: 13, flex: 1, lineHeight: 18 },
+
+  // Page 3: Confirm
+  confirmWrap: { flex: 1 },
+  confirmCard: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    backgroundColor: colors.surface1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 24,
     alignItems: 'center',
     gap: 10,
-    marginBottom: 16,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.surface3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  checkLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    flex: 1,
-    lineHeight: 18,
-  },
-  // Build style grid
-  styleGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  styleCard: {
-    width: '47%',
-    backgroundColor: colors.surface1,
-    borderWidth: 1,
-    borderColor: colors.surface2,
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    gap: 6,
-  },
-  styleCardSelected: {
-    borderColor: colors.accent,
+  confirmIconRing: {
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: colors.accent + '18',
+    borderWidth: 1.5, borderColor: colors.accent + '44',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
   },
-  styleIcon: { fontSize: 24 },
-  styleLabel: {
+  confirmHeadline: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  confirmBody: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  confirmEmail: {
+    color: colors.textPrimary,
     fontWeight: '600',
   },
-  styleLabelSelected: { color: colors.accent },
-  errorText: {
-    color: '#f87171',
-    fontSize: 13,
-    marginBottom: 12,
+  confirmHint: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 18,
     textAlign: 'center',
+  },
+  resendBtn: { paddingVertical: 4, paddingHorizontal: 8, marginTop: 2 },
+  resendText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  resendTextSent: { color: colors.textTertiary },
+
+  // Showcase rows
+  showcaseWrap: { marginTop: 20, gap: 10 },
+  showcaseLabel: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  rows: { gap: 10 },
+  rowClip: {
+    overflow: 'hidden',
+    height: CARD_H,
+    width: '100%',
+  },
+  rowTrack: {
+    flexDirection: 'row',
+    gap: CARD_GAP,
+    paddingHorizontal: CARD_GAP / 2,
+  },
+  card: {
+    width: CARD_W,
+    height: CARD_H,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: colors.surface2,
+    flexShrink: 0,
+  },
+  cardImage: { width: '100%', height: '100%' },
+  cardLabel: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  cardLabelText: { color: '#fff', fontSize: 10, fontWeight: '600' },
+
+  // Footer CTA
+  confirmFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
 })
