@@ -9,15 +9,15 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  LayoutChangeEvent,
+  type LayoutChangeEvent,
 } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ChevronDown, X, Tag, Plus } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { useAuth } from '@/lib/auth'
-import { supabase } from '@/lib/supabase'
 import { fetchUserBuilds, createPost, updateBuild } from '@/lib/supabaseQueries'
+import { uploadImage } from '@/lib/imageUpload'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
 import type { LinkedProduct } from '@/types'
 // Shared product tag sheet — single source of truth
@@ -25,7 +25,7 @@ import ProductSheet from '@/components/ProductSheet'
 
 // ─── Main compose screen ──────────────────────────────────────────────────────
 export default function ComposeScreen() {
-  const { photoUri, buildId: initialBuildId } = useLocalSearchParams<{ photoUri: string; buildId: string }>()
+  const { photoUri, buildId: initialBuildId, photoBase64 } = useLocalSearchParams<{ photoUri: string; buildId: string; photoBase64: string }>()
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
   const queryClient = useQueryClient()
@@ -54,17 +54,19 @@ export default function ComposeScreen() {
   const partCategories = buildCategoryDef?.partCategories ?? []
   const isPro = myBuilds.some(b => b.ownerIsPro)
 
-  async function uploadPhoto(uri: string): Promise<string | null> {
+  async function uploadPhoto(uri: string, b64?: string): Promise<string | null> {
     try {
-      const resp = await fetch(uri)
-      const blob = await resp.blob()
-      const ext = blob.type.includes('png') ? 'png' : 'jpg'
-      const path = `${userId}/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from('posts')
-        .upload(path, blob, { contentType: blob.type, upsert: false })
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+      const path = `${userId}/${Date.now()}.jpg`
+      // On native, use base64 to avoid the React Native fetch(file://).blob()
+      // empty-body bug that stores 0 bytes and renders as a black box.
+      // On web, pass the URI directly (data:, blob:, or http: — all work fine).
+      const publicUrl = await uploadImage({
+        bucket: 'posts',
+        path,
+        base64: Platform.OS !== 'web' ? (b64 || null) : null,
+        uri: Platform.OS === 'web' ? uri : null,
+        contentType: 'image/jpeg',
+      })
       return publicUrl
     } catch {
       return null
@@ -76,7 +78,7 @@ export default function ComposeScreen() {
     setSubmitting(true)
     setError(null)
     try {
-      const photoUrl = await uploadPhoto(photoUri)
+      const photoUrl = await uploadPhoto(photoUri, photoBase64 || undefined)
       if (!photoUrl) throw new Error('Photo upload failed. Check that the "posts" storage bucket exists.')
 
       const newPost = await createPost({

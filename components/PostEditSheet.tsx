@@ -19,10 +19,12 @@ import {
   KeyboardAvoidingView,
   Alert,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import { X, Pin, Lock, Globe, Trash, Camera, Tag, Plus } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import type { Post, LinkedProduct } from '@/types'
 import { supabase } from '@/lib/supabase'
+import { uploadImage } from '@/lib/imageUpload'
 // Shared product tag sheet — single source of truth with compose screen
 import ProductSheet from '@/components/ProductSheet'
 
@@ -103,6 +105,39 @@ export default function PostEditSheet({
     } finally {
       setPhotoUploading(false)
       e.target.value = ''
+    }
+  }
+
+  async function handleNativePhotoAdd() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      setPhotoError('Photo library access is required to add photos.')
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.85,
+      base64: true,
+    })
+    if (result.canceled || !result.assets?.[0]) return
+    const asset = result.assets[0]
+    setPhotoUploading(true)
+    setPhotoError(null)
+    try {
+      const path = `${userId}/${Date.now()}.jpg`
+      const publicUrl = await uploadImage({
+        bucket: 'posts',
+        path,
+        base64: asset.base64,
+        contentType: 'image/jpeg',
+      })
+      setPhotos(prev => [...prev, publicUrl])
+    } catch (err: any) {
+      console.error('Native photo add failed', err)
+      setPhotoError(err?.message ?? 'Upload failed. Please try again.')
+    } finally {
+      setPhotoUploading(false)
     }
   }
 
@@ -215,9 +250,13 @@ export default function PostEditSheet({
                       </label>
                     </>
                   ) : (
-                    <Pressable style={styles.addPhotoBtn}>
+                    <Pressable
+                      style={[styles.addPhotoBtn, photoUploading && { opacity: 0.5 }]}
+                      onPress={handleNativePhotoAdd}
+                      disabled={photoUploading}
+                    >
                       <Camera size={20} color={colors.textTertiary} />
-                      <Text style={styles.addPhotoBtnText}>Add</Text>
+                      <Text style={styles.addPhotoBtnText}>{photoUploading ? '…' : 'Add'}</Text>
                     </Pressable>
                   )}
                 </View>

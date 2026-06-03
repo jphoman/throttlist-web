@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { AppState, AppStateStatus } from 'react-native'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
@@ -21,16 +22,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Restore session from AsyncStorage on mount
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setLoading(false)
     })
 
+    // Keep state in sync with auth events (sign-in, sign-out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
 
-    return () => subscription.unsubscribe()
+    // Pause/resume the token auto-refresh as the app moves between background
+    // and foreground. Without this the refresh timer fires while backgrounded,
+    // and the token can silently expire if the app is killed between refreshes.
+    function handleAppStateChange(nextState: AppStateStatus) {
+      if (nextState === 'active') {
+        supabase.auth.startAutoRefresh()
+      } else {
+        supabase.auth.stopAutoRefresh()
+      }
+    }
+    const appStateSub = AppState.addEventListener('change', handleAppStateChange)
+
+    return () => {
+      subscription.unsubscribe()
+      appStateSub.remove()
+    }
   }, [])
 
   async function signOut() {

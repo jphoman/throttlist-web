@@ -30,6 +30,7 @@ import {
 } from '@/components/Icons'
 import { fetchProfile, fetchUserBuilds, updateProfile } from '@/lib/supabaseQueries'
 import { supabase } from '@/lib/supabase'
+import { uploadImage } from '@/lib/imageUpload'
 import { colors } from '@/constants/throttlist'
 import { useAuth } from '@/lib/auth'
 import InitialsAvatar from '@/components/InitialsAvatar'
@@ -163,21 +164,22 @@ export default function SettingsScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      // base64 required on native to avoid the fetch(file://).blob() empty-body bug
+      base64: true,
     })
     if (result.canceled || !result.assets?.[0]) return
     const asset = result.assets[0]
     setAvatarUploading(true)
     setAvatarError(null)
     try {
-      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg'
-      const path = `${userId}/avatar-${Date.now()}.${ext}`
-      const response = await fetch(asset.uri)
-      const blob = await response.blob()
-      const { error: storageError } = await supabase.storage
-        .from('posts')
-        .upload(path, blob, { contentType: `image/${ext}`, upsert: true })
-      if (storageError) throw storageError
-      const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(path)
+      const path = `${userId}/avatar-${Date.now()}.jpg`
+      const publicUrl = await uploadImage({
+        bucket: 'posts',
+        path,
+        base64: asset.base64,
+        contentType: 'image/jpeg',
+        upsert: true,
+      })
       setLocalAvatarUrl(publicUrl)
       await updateProfile(userId, { avatar_url: publicUrl })
       queryClient.invalidateQueries({ queryKey: ['profile', userId] })

@@ -11,6 +11,8 @@ import {
 import { router } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import { useIsFocused } from '@react-navigation/native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery } from '@tanstack/react-query'
 import { X, Zap, Settings, Gallery, Plus, Clock, Crop, Grid, Sliders } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
@@ -22,12 +24,19 @@ import InitialsAvatar from '@/components/InitialsAvatar'
 export default function CaptureScreen() {
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
+  const isFocused = useIsFocused()
+  const insets = useSafeAreaInsets()
+  const topOffset = insets.top + 6
 
   const [permission, requestPermission] = useCameraPermissions()
   const [flash, setFlash] = useState(false)
   const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null)
   const cameraRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
+
+  // Once a photo is taken we switch the CameraView to inactive so the
+  // green privacy indicator turns off while we navigate to compose.
+  const [photoTaken, setPhotoTaken] = useState(false)
 
   // Settings panel state
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -59,6 +68,11 @@ export default function CaptureScreen() {
     }
   }, [permission])
 
+  // Reset photoTaken when the screen re-gains focus (user navigated back)
+  useEffect(() => {
+    if (isFocused) setPhotoTaken(false)
+  }, [isFocused])
+
   // Start rear camera on web
   useEffect(() => {
     if (Platform.OS !== 'web') return
@@ -85,16 +99,20 @@ export default function CaptureScreen() {
     }
   }, [])
 
-  function navigateWithPhoto(photoUri: string) {
+  function navigateWithPhoto(photoUri: string, photoBase64?: string | null) {
     if (myBuilds.length === 0) {
       router.push({
         pathname: '/add-build',
-        params: { returnTo: 'compose', photoUri },
+        params: { returnTo: 'compose', photoUri, photoBase64: photoBase64 ?? '' },
       })
     } else {
       router.push({
         pathname: '/compose',
-        params: { photoUri, buildId: selectedBuildId ?? '' },
+        params: {
+          photoUri,
+          photoBase64: photoBase64 ?? '',
+          buildId: selectedBuildId ?? '',
+        },
       })
     }
   }
@@ -113,9 +131,11 @@ export default function CaptureScreen() {
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.85,
+      // base64 required on native so uploadImage() can do a non-empty upload
+      base64: Platform.OS !== 'web',
     })
     if (!result.canceled && result.assets[0]) {
-      navigateWithPhoto(result.assets[0].uri)
+      navigateWithPhoto(result.assets[0].uri, result.assets[0].base64 ?? null)
     }
   }
 
@@ -134,9 +154,16 @@ export default function CaptureScreen() {
     // Native — take a photo with the camera
     if (cameraRef.current) {
       try {
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.85, skipProcessing: false })
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.85,
+          skipProcessing: false,
+          // base64 required on native so uploadImage() can do a non-empty upload
+          base64: true,
+        })
         if (photo?.uri) {
-          navigateWithPhoto(photo.uri)
+          // Deactivate the camera before navigating so the green indicator turns off
+          setPhotoTaken(true)
+          navigateWithPhoto(photo.uri, photo.base64 ?? null)
           return
         }
       } catch {
@@ -187,7 +214,7 @@ export default function CaptureScreen() {
   if (hasNoBuilds) {
     return (
       <View style={styles.gate}>
-        <Pressable style={styles.closeGate} onPress={() => router.replace('/(tabs)/feed')}>
+        <Pressable style={[styles.closeGate, { top: topOffset }]} onPress={() => router.replace('/(tabs)/feed')}>
           <X size={22} color="rgba(255,255,255,0.6)" />
         </Pressable>
         <Pressable
@@ -208,7 +235,7 @@ export default function CaptureScreen() {
   if (Platform.OS !== 'web' && permission && !permission.granted) {
     return (
       <View style={styles.gate}>
-        <Pressable style={styles.closeGate} onPress={() => router.replace('/(tabs)/feed')}>
+        <Pressable style={[styles.closeGate, { top: topOffset }]} onPress={() => router.replace('/(tabs)/feed')}>
           <X size={22} color="rgba(255,255,255,0.6)" />
         </Pressable>
         <View style={styles.gateCard}>
@@ -227,7 +254,9 @@ export default function CaptureScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Camera viewfinder */}
+      {/* Camera viewfinder
+          active={isFocused && !photoTaken} releases the native camera session
+          as soon as we navigate away, turning off the green privacy indicator. */}
       {Platform.OS === 'web' ? (
         <View ref={cameraRef} style={styles.camera} />
       ) : (
@@ -236,6 +265,7 @@ export default function CaptureScreen() {
           style={styles.camera}
           facing="back"
           flash={flash ? 'on' : 'off'}
+          active={isFocused && !photoTaken}
         />
       )}
 
@@ -257,7 +287,7 @@ export default function CaptureScreen() {
       )}
 
       {/* Top controls */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { top: topOffset }]}>
         <Pressable style={styles.iconBtn} onPress={() => router.replace('/(tabs)/feed')}>
           <X size={22} color="#fff" />
         </Pressable>
@@ -271,7 +301,7 @@ export default function CaptureScreen() {
 
       {/* Settings panel */}
       {settingsOpen && (
-        <View style={styles.settingsPanel}>
+        <View style={[styles.settingsPanel, { top: topOffset + 52 }]}>
           <View style={styles.settingsRow}>
             <Pressable
               style={[styles.settingBtn, activeSetting === 'timer' && styles.settingBtnActive]}
@@ -401,7 +431,6 @@ const styles = StyleSheet.create({
   camera: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   topBar: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 54 : 20,
     left: 0, right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -460,7 +489,6 @@ const styles = StyleSheet.create({
   buildNameSelected: { color: '#fff' },
   settingsPanel: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 54 + 52 : 20 + 52,
     left: 0, right: 0,
     paddingHorizontal: 16, gap: 10,
   },
@@ -501,7 +529,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 8,
   },
   gate: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  closeGate: { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 20, left: 16, padding: 10 },
+  closeGate: { position: 'absolute', left: 16, padding: 10 },
   gateCard: {
     alignItems: 'center', gap: 16,
     backgroundColor: 'rgba(255,255,255,0.05)',

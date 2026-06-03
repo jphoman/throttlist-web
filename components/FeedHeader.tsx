@@ -1,5 +1,6 @@
 import React from 'react'
-import { View, Text, StyleSheet, Pressable, Platform } from 'react-native'
+import { View, Text, StyleSheet, Pressable } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Bell } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { ThrottlistLogo } from '@/components/ThrottlistLogo'
@@ -10,8 +11,9 @@ interface FeedHeaderProps {
 }
 
 export default function FeedHeader({ unreadCount = 0, onAlertsPress }: FeedHeaderProps) {
+  const insets = useSafeAreaInsets()
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
       <ThrottlistLogo color={colors.accent} height={22} />
       <Pressable onPress={onAlertsPress} style={styles.alertBtn}>
         <Bell size={22} color={colors.textSecondary} />
@@ -31,13 +33,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
     paddingBottom: 12,
     backgroundColor: colors.bg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-alertBtn: {
+  alertBtn: {
     position: 'relative',
     padding: 4,
   },

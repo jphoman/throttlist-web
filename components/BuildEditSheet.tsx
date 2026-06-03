@@ -13,9 +13,11 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import { X, Camera, Plus, Lock, Globe } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { supabase } from '@/lib/supabase'
+import { uploadImage } from '@/lib/imageUpload'
 import type { Build, Post } from '@/types'
 
 interface BuildEditSheetProps {
@@ -89,6 +91,42 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
       setSelectedCoverUrl(publicUrl)
       // Reset the input so the same file can be re-selected if needed
       e.target.value = ''
+    } catch (err: any) {
+      console.error('Cover upload failed', err)
+      setUploadError(err?.message ?? 'Upload failed. Please try again.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleNativeCoverUpload() {
+    if (!userId) return
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      setUploadError('Photo library access is required to change the cover photo.')
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.85,
+      base64: true,
+    })
+    if (result.canceled || !result.assets?.[0]) return
+    const asset = result.assets[0]
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const path = `${userId}/cover-${Date.now()}.jpg`
+      const publicUrl = await uploadImage({
+        bucket: 'posts',
+        path,
+        base64: asset.base64,
+        contentType: 'image/jpeg',
+        upsert: true,
+      })
+      setSelectedCoverUrl(publicUrl)
     } catch (err: any) {
       console.error('Cover upload failed', err)
       setUploadError(err?.message ?? 'Upload failed. Please try again.')
@@ -257,7 +295,8 @@ export default function BuildEditSheet({ visible, build, posts = [], userId, onC
                   </>
                 ) : (
                   <Pressable
-                    style={styles.coverPhotoBtn}
+                    style={[styles.coverPhotoBtn, (uploading || !userId) && { opacity: 0.5 }]}
+                    onPress={handleNativeCoverUpload}
                     disabled={uploading || !userId}
                   >
                     {uploading ? (

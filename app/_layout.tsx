@@ -1,3 +1,4 @@
+import 'react-native-url-polyfill/auto'
 import { useFrameworkReady } from '@/hooks/useFrameworkReady'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
