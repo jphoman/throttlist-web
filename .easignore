@@ -2,5 +2,21 @@ node_modules
 dist
 .expo
 *.log
-*.md
 .git
+# CocoaPods — EAS installs these during the build, no need to upload them
+ios/Pods
+ios/.xcode.env.local
+# Large binary/media files not needed for builds
+*.mp4
+*.mov
+*.avi
+# Editor/OS artifacts
+.DS_Store
+.vscode
+*.swp
+# Docs
+*.md
+ARCHITECTURE.md
+PROJECT_STATUS.md
+# Preview tool cache
+.claude/launch.json
