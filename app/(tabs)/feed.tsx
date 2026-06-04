@@ -505,7 +505,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   headersWrap: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, backgroundColor: colors.bg },
   mainHeader: { overflow: 'hidden' },   // height set inline with dynamic inset value
-  headerInner: { height: HEADER_CONTENT_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  // paddingTop is applied inline (= insets.top) so the controls sit below the Dynamic Island.
+  // flex:1 fills the parent mainHeader height; do NOT set an explicit height here.
+  headerInner: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
   headerSpacer: { width: 30 },
   bellBtn: { padding: 4, width: 30, alignItems: 'center' },
   sortHeader: {

@@ -595,7 +595,8 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
     .from('comments')
     .select('*, profiles(username, display_name, avatar_url, is_pro)')
     .eq('post_id', postId)
-    .is('build_id', null)           // exclude build-scoped comments
+    // Note: no build_id filter needed — .eq('post_id') already excludes
+    // build-scoped comments (those have post_id = null).
     .order('created_at', { ascending: true })
   if (error || !data) return []
   return data.map((row: any) => mapCommentRow(row, 'post'))

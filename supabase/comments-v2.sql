@@ -7,6 +7,9 @@
 ALTER TABLE public.comments
   ADD COLUMN IF NOT EXISTS build_id UUID REFERENCES public.builds(id) ON DELETE CASCADE;
 
+-- Make post_id nullable so build-scoped comments don't need a post_id
+ALTER TABLE public.comments ALTER COLUMN post_id DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS comments_build_id_idx ON public.comments(build_id);
 
 -- 2. comment_likes — tracks which users have liked which comments
