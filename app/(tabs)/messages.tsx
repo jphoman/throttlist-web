@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   Platform,
   Modal,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native'
 import { Edit2, Search, X, ArrowLeft, ProBadge } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import { router, useFocusEffect } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import { useAuth } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
 import {
   fetchConversations,
   searchProfiles,
@@ -41,29 +43,51 @@ function relativeTime(iso: string): string {
 
 export default function MessagesScreen() {
   const { user: authUser } = useAuth()
+  const userId = authUser?.id ?? ''
   const [search, setSearch] = useState('')
   const [conversations, setConversations] = useState<DMConversation[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
   const [userSearch, setUserSearch] = useState('')
   const [userResults, setUserResults] = useState<User[]>([])
   const [searching, setSearching] = useState(false)
 
-  // Reload conversations every time the tab is focused
-  useFocusEffect(
-    useCallback(() => {
-      if (!authUser?.id) return
-      let active = true
-      setLoading(true)
-      fetchConversations(authUser.id).then(data => {
-        if (active) {
-          setConversations(data)
-          setLoading(false)
-        }
-      })
-      return () => { active = false }
-    }, [authUser?.id])
-  )
+  function loadConversations(showSpinner = false) {
+    if (!userId) return
+    if (showSpinner) setLoading(true)
+    let active = true
+    fetchConversations(userId).then(data => {
+      if (active) { setConversations(data); setLoading(false) }
+    })
+    return () => { active = false }
+  }
+
+  // Reload on tab focus
+  useFocusEffect(useCallback(() => loadConversations(loading), [userId]))
+
+  // Pull-to-refresh
+  async function handleRefresh() {
+    setRefreshing(true)
+    await fetchConversations(userId).then(setConversations)
+    setRefreshing(false)
+  }
+
+  // Realtime — re-fetch conversation list when any message in this user's
+  // inbox changes (covers both new arrivals and is_read flips from the
+  // conversation screen, clearing the unread badge without requiring navigation)
+  useEffect(() => {
+    if (!userId) return
+    const channel = supabase
+      .channel(`inbox-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `recipient_id=eq.${userId}` },
+        () => { fetchConversations(userId).then(setConversations) }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [userId])
 
   const q = search.trim().toLowerCase()
   const filteredConvos = q
@@ -103,7 +127,11 @@ export default function MessagesScreen() {
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
+      >
         {/* Search */}
         <View style={styles.searchWrap}>
           <View style={styles.searchBar}>

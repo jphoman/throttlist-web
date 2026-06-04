@@ -652,7 +652,7 @@ export async function deletePost(postId: string): Promise<void> {
   await supabase.from('posts').delete().eq('id', postId)
 }
 
-// ─── Notifications (derived from existing tables) ─────────────────────────────
+// ─── Notifications ────────────────────────────────────────────────────────────
 
 export type Notification = {
   id: string
@@ -664,10 +664,16 @@ export type Notification = {
   content: string
   postId?: string
   buildId?: string
-  thumbUrl?: string   // post photo or build cover photo
-  navPath?: string    // route to push when tapped
+  thumbUrl?: string
+  navPath?: string
   createdAt: string
   read: boolean
+}
+
+export type NotificationPrefs = {
+  notifyLikes: boolean
+  notifyComments: boolean
+  notifyFollows: boolean
 }
 
 function firstPhoto(photosJson: any): string {
@@ -677,115 +683,124 @@ function firstPhoto(photosJson: any): string {
   } catch { return '' }
 }
 
+/**
+ * Fetch notifications from the `notifications` table (created by supabase/notifications.sql).
+ * Falls back gracefully — if the table doesn't exist yet the function returns [].
+ */
 export async function fetchNotifications(userId: string): Promise<Notification[]> {
-  // Fetch user's post IDs first
-  const { data: myPosts } = await supabase
-    .from('posts')
-    .select('id, build_id, photos, builds(nickname, slug, cover_photo_url, profiles(username))')
-    .eq('user_id', userId)
+  const { data, error } = await supabase
+    .from('notifications')
+    .select(`
+      id, type, target_type, target_id, read_at, created_at,
+      actor:profiles!notifications_actor_id_fkey(username, display_name, avatar_url, is_pro)
+    `)
+    .eq('recipient_id', userId)
+    .order('created_at', { ascending: false })
     .limit(50)
 
-  const postIds = (myPosts ?? []).map((p: any) => p.id)
-  const notifications: Notification[] = []
+  // Table not yet created → return empty (alerts screen shows the set-up prompt)
+  if (error) return []
 
-  // Likes on user's posts
-  if (postIds.length > 0) {
-    const { data: likes } = await supabase
-      .from('likes')
-      .select('post_id, user_id, created_at, profiles!likes_user_id_fkey(username, display_name, avatar_url, is_pro)')
-      .in('post_id', postIds)
-      .neq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(30)
+  // Batch-fetch thumbnails for targets
+  const postIds = (data ?? []).filter((n: any) => n.target_type === 'post').map((n: any) => n.target_id)
+  const buildIds = (data ?? []).filter((n: any) => n.target_type === 'build').map((n: any) => n.target_id)
 
-    for (const like of likes ?? []) {
-      const post = (myPosts ?? []).find((p: any) => p.id === like.post_id)
-      const buildUsername = post?.builds?.profiles?.username ?? ''
-      const buildSlug = post?.builds?.slug ?? ''
-      notifications.push({
-        id: `like_${like.post_id}_${like.user_id}`,
-        type: 'like',
-        actorUsername: like.profiles?.username ?? '',
-        actorDisplayName: like.profiles?.display_name ?? '',
-        actorAvatarUrl: like.profiles?.avatar_url ?? '',
-        actorIsPro: like.profiles?.is_pro ?? false,
-        content: `liked your post`,
-        postId: like.post_id,
-        thumbUrl: firstPhoto(post?.photos) || post?.builds?.cover_photo_url || '',
-        navPath: like.post_id ? `/post/${like.post_id}` : (buildUsername && buildSlug ? `/build/${buildUsername}/${buildSlug}` : undefined),
-        createdAt: like.created_at,
-        read: false,
-      })
+  const [{ data: postRows }, { data: buildRows }] = await Promise.all([
+    postIds.length > 0
+      ? supabase.from('posts').select('id, photos, builds(nickname, slug, profiles!builds_user_id_fkey(username))').in('id', postIds)
+      : Promise.resolve({ data: [] }),
+    buildIds.length > 0
+      ? supabase.from('builds').select('id, nickname, slug, cover_photo_url, profiles!builds_user_id_fkey(username)').in('id', buildIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const postMap = new Map((postRows ?? []).map((p: any) => [p.id, p]))
+  const buildMap = new Map((buildRows ?? []).map((b: any) => [b.id, b]))
+
+  return (data ?? []).map((n: any) => {
+    const actor = n.actor ?? {}
+    const post = n.target_type === 'post' ? postMap.get(n.target_id) : null
+    const build = n.target_type === 'build' ? buildMap.get(n.target_id) : null
+
+    let content = ''
+    let thumbUrl = ''
+    let navPath: string | undefined
+
+    if (n.type === 'like') {
+      content = 'liked your post'
+      thumbUrl = post ? firstPhoto(post.photos) : ''
+      navPath = n.target_id ? `/post/${n.target_id}` : undefined
+    } else if (n.type === 'comment') {
+      content = 'commented on your post'
+      thumbUrl = post ? firstPhoto(post.photos) : ''
+      navPath = n.target_id ? `/post/${n.target_id}` : undefined
+    } else if (n.type === 'follow') {
+      content = `started following ${build?.nickname ?? 'your build'}`
+      thumbUrl = build?.cover_photo_url ?? ''
+      const ownerUsername = build?.profiles?.username ?? ''
+      navPath = ownerUsername && build?.slug ? `/build/${ownerUsername}/${build.slug}` : undefined
     }
 
-    // Comments on user's posts
-    const { data: comments } = await supabase
-      .from('comments')
-      .select('id, post_id, body, user_id, created_at, profiles(username, display_name, avatar_url, is_pro)')
-      .in('post_id', postIds)
-      .neq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(30)
-
-    for (const c of comments ?? []) {
-      const post = (myPosts ?? []).find((p: any) => p.id === c.post_id)
-      const buildUsername = post?.builds?.profiles?.username ?? ''
-      const buildSlug = post?.builds?.slug ?? ''
-      notifications.push({
-        id: `comment_${c.id}`,
-        type: 'comment',
-        actorUsername: c.profiles?.username ?? '',
-        actorDisplayName: c.profiles?.display_name ?? '',
-        actorAvatarUrl: c.profiles?.avatar_url ?? '',
-        actorIsPro: c.profiles?.is_pro ?? false,
-        content: `commented: "${c.body.slice(0, 60)}${c.body.length > 60 ? '…' : ''}"`,
-        postId: c.post_id,
-        thumbUrl: firstPhoto(post?.photos) || post?.builds?.cover_photo_url || '',
-        navPath: c.post_id ? `/post/${c.post_id}` : (buildUsername && buildSlug ? `/build/${buildUsername}/${buildSlug}` : undefined),
-        createdAt: c.created_at,
-        read: false,
-      })
+    return {
+      id: n.id,
+      type: n.type as Notification['type'],
+      actorUsername: actor.username ?? '',
+      actorDisplayName: actor.display_name ?? '',
+      actorAvatarUrl: actor.avatar_url ?? '',
+      actorIsPro: actor.is_pro ?? false,
+      content,
+      postId: n.target_type === 'post' ? n.target_id : undefined,
+      buildId: n.target_type === 'build' ? n.target_id : undefined,
+      thumbUrl,
+      navPath,
+      createdAt: n.created_at,
+      read: !!n.read_at,
     }
+  })
+}
+
+/** Mark all unread notifications as read for the current user. */
+export async function markNotificationsRead(userId: string): Promise<void> {
+  await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('recipient_id', userId)
+    .is('read_at', null)
+}
+
+/** Count unread notifications (for the bell badge). */
+export async function fetchUnreadNotificationCount(userId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('recipient_id', userId)
+    .is('read_at', null)
+  if (error) return 0
+  return count ?? 0
+}
+
+export async function fetchNotificationPrefs(userId: string): Promise<NotificationPrefs> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('notify_likes, notify_comments, notify_follows')
+    .eq('id', userId)
+    .single()
+  return {
+    notifyLikes: data?.notify_likes ?? true,
+    notifyComments: data?.notify_comments ?? true,
+    notifyFollows: data?.notify_follows ?? true,
   }
+}
 
-  // Follows on user's builds
-  const { data: myBuilds } = await supabase
-    .from('builds')
-    .select('id, nickname, slug, cover_photo_url, profiles!builds_user_id_fkey(username)')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-
-  const buildIds = (myBuilds ?? []).map((b: any) => b.id)
-  if (buildIds.length > 0) {
-    const { data: follows } = await supabase
-      .from('build_follows')
-      .select('build_id, follower_id, created_at, profiles!build_follows_follower_id_fkey(username, display_name, avatar_url, is_pro)')
-      .in('build_id', buildIds)
-      .order('created_at', { ascending: false })
-      .limit(30)
-
-    for (const f of follows ?? []) {
-      const build = (myBuilds ?? []).find((b: any) => b.id === f.build_id)
-      const buildUsername = build?.profiles?.username ?? ''
-      notifications.push({
-        id: `follow_${f.build_id}_${f.follower_id}`,
-        type: 'follow',
-        actorUsername: f.profiles?.username ?? '',
-        actorDisplayName: f.profiles?.display_name ?? '',
-        actorAvatarUrl: f.profiles?.avatar_url ?? '',
-        actorIsPro: f.profiles?.is_pro ?? false,
-        content: `started following ${build?.nickname ?? 'your build'}`,
-        buildId: f.build_id,
-        thumbUrl: build?.cover_photo_url || '',
-        navPath: buildUsername && build?.slug ? `/build/${buildUsername}/${build.slug}` : undefined,
-        createdAt: f.created_at,
-        read: false,
-      })
-    }
-  }
-
-  // Sort all by date desc
-  return notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 50)
+export async function updateNotificationPrefs(userId: string, prefs: NotificationPrefs): Promise<void> {
+  await supabase
+    .from('profiles')
+    .update({
+      notify_likes: prefs.notifyLikes,
+      notify_comments: prefs.notifyComments,
+      notify_follows: prefs.notifyFollows,
+    })
+    .eq('id', userId)
 }
 
 // ─── Search ───────────────────────────────────────────────────────────────────

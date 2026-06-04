@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import {
   View,
   Text,
@@ -9,7 +9,10 @@ import {
   TextInput,
   Image,
   Dimensions,
+  RefreshControl,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useQueryClient } from '@tanstack/react-query'
 import Svg, { Path as SvgPath } from 'react-native-svg'
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
@@ -51,9 +54,12 @@ const TAGS = [
 export default function DiscoverScreen() {
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
+  const queryClient = useQueryClient()
+  const insets = useSafeAreaInsets()
 
   const [query, setQuery] = useState('')
   const [postSort, setPostSort] = useState<PostSort>('trending')
+  const [refreshing, setRefreshing] = useState(false)
 
   const { data: builds = [] } = useQuery({
     queryKey: ['discover-builds'],
@@ -63,13 +69,23 @@ export default function DiscoverScreen() {
   const { data: recommendedUsers = [] } = useQuery({
     queryKey: ['discover-users', userId],
     queryFn: () => fetchDiscoverUsers(20, userId || undefined),
-    staleTime: 5 * 60_000, // re-rank at most every 5 min
+    staleTime: 5 * 60_000,
   })
 
   const { data: posts = [] } = useQuery({
     queryKey: ['discover-posts'],
     queryFn: () => fetchFeed(30, 0),
   })
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['discover-builds'] }),
+      queryClient.invalidateQueries({ queryKey: ['discover-users', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['discover-posts'] }),
+    ])
+    setRefreshing(false)
+  }
 
   const q = query.trim().toLowerCase()
   const isSearching = q.length > 0
@@ -108,7 +124,7 @@ export default function DiscoverScreen() {
     <View style={styles.container}>
 
       {/* Search bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={styles.searchBar}>
           <Search size={16} color={colors.textTertiary} />
           <TextInput
@@ -129,6 +145,7 @@ export default function DiscoverScreen() {
         stickyHeaderIndices={[1]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
       >
 
         {/* [0] Collapses on scroll */}
@@ -303,7 +320,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
+    paddingTop: 10,
     paddingBottom: 12,
     backgroundColor: colors.bg,
     borderBottomWidth: 1,

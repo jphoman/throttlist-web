@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   View,
   Text,
@@ -8,8 +8,10 @@ import {
   Pressable,
   Platform,
   Linking,
+  RefreshControl,
 } from 'react-native'
-import { useQuery } from '@tanstack/react-query'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { Instagram, Youtube, Link, Settings, ChevronRight, Star, ProBadge, Plus } from '@/components/Icons'
 import { fetchProfile, fetchUserBuilds, fetchFollowingCount, fetchCreatorFollowerCount, fetchBuildsByIds } from '@/lib/supabaseQueries'
@@ -20,6 +22,20 @@ import BuildCard from '@/components/BuildCard'
 export default function ProfileScreen() {
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
+  const queryClient = useQueryClient()
+  const insets = useSafeAreaInsets()
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['profile', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['following-count', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['creator-followers', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['top-builds', userId] }),
+    ])
+    setRefreshing(false)
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', userId],
@@ -59,9 +75,13 @@ export default function ProfileScreen() {
   const isPro = user.proTier === '1' || user.proTier === 1
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
+    >
       {/* Top bar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.topUsername}>@{user.username}</Text>
         <Pressable style={styles.settingsBtn} onPress={() => router.push('/settings')}>
           <Settings size={20} color={colors.textSecondary} />
@@ -242,7 +262,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
+    paddingTop: 8,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,

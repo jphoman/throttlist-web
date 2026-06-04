@@ -1,11 +1,18 @@
-import React from 'react'
-import { View, Text, StyleSheet, Platform, Image, ScrollView, Pressable, ActivityIndicator, Modal, Switch } from 'react-native'
+import React, { useCallback, useEffect, useRef } from 'react'
+import { View, Text, StyleSheet, Platform, Image, ScrollView, Pressable, ActivityIndicator, Modal, Switch, RefreshControl } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Bell, Heart, MessageCircle, UserPlus, UserMinus, Settings, ProBadge, X } from '@/components/Icons'
 import { colors, timeAgo } from '@/constants/throttlist'
-import { useQuery } from '@tanstack/react-query'
-import { fetchNotifications } from '@/lib/supabaseQueries'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  fetchNotifications,
+  markNotificationsRead,
+  fetchNotificationPrefs,
+  updateNotificationPrefs,
+} from '@/lib/supabaseQueries'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import type { Notification } from '@/lib/supabaseQueries'
 
@@ -201,9 +208,77 @@ const FILTERS: { id: AlertFilter; label: string }[] = [
 export default function AlertsScreen() {
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
+  const queryClient = useQueryClient()
+  const insets = useSafeAreaInsets()
+
   const [activeFilter, setActiveFilter] = React.useState<AlertFilter>('all')
   const [settingsOpen, setSettingsOpen] = React.useState(false)
   const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(new Set())
+  const [refreshing, setRefreshing] = React.useState(false)
+
+  // Notification preferences — DB-backed
+  const [notifyLikes,    setNotifyLikes]    = React.useState(true)
+  const [notifyComments, setNotifyComments] = React.useState(true)
+  const [notifyFollows,  setNotifyFollows]  = React.useState(true)
+  const prefsLoadedRef = useRef(false)
+
+  // Load prefs once
+  useEffect(() => {
+    if (!userId || prefsLoadedRef.current) return
+    prefsLoadedRef.current = true
+    fetchNotificationPrefs(userId).then(p => {
+      setNotifyLikes(p.notifyLikes)
+      setNotifyComments(p.notifyComments)
+      setNotifyFollows(p.notifyFollows)
+    })
+  }, [userId])
+
+  // Persist a pref change to DB
+  function savePref(key: 'likes' | 'comments' | 'follows', value: boolean) {
+    if (!userId) return
+    const next = {
+      notifyLikes:    key === 'likes'    ? value : notifyLikes,
+      notifyComments: key === 'comments' ? value : notifyComments,
+      notifyFollows:  key === 'follows'  ? value : notifyFollows,
+    }
+    updateNotificationPrefs(userId, next)
+  }
+
+  const { data: rawNotifications = [], isLoading, refetch } = useQuery({
+    queryKey: ['notifications', userId],
+    queryFn: () => fetchNotifications(userId),
+    enabled: !!userId,
+    staleTime: 30_000,
+  })
+
+  // Mark all read + refetch whenever this tab gains focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId) return
+      markNotificationsRead(userId)
+      refetch()
+    }, [userId])
+  )
+
+  // Realtime: re-invalidate when a new notification is inserted for this user
+  useEffect(() => {
+    if (!userId) return
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${userId}` },
+        () => { queryClient.invalidateQueries({ queryKey: ['notifications', userId] }) }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [userId])
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    await refetch()
+    setRefreshing(false)
+  }
 
   function dismissOne(id: string) {
     setDismissedIds(prev => new Set([...prev, id]))
@@ -211,27 +286,14 @@ export default function AlertsScreen() {
   function clearAll() {
     setDismissedIds(new Set(allNotifications.map(n => n.id)))
   }
-  const [muteLikes,      setMuteLikes]      = React.useState(false)
-  const [muteComments,   setMuteComments]   = React.useState(false)
-  const [muteFollows,    setMuteFollows]    = React.useState(false)
-  const [muteUnfollows,  setMuteUnfollows]  = React.useState(false)
 
-  const { data: rawNotifications = [], isLoading } = useQuery({
-    queryKey: ['notifications', userId],
-    queryFn: () => fetchNotifications(userId),
-    enabled: !!userId,
-    staleTime: 30_000,
+  const allNotifications = rawNotifications.filter(n => {
+    if (dismissedIds.has(n.id))                       return false
+    if (n.type === 'like'    && !notifyLikes)          return false
+    if (n.type === 'comment' && !notifyComments)       return false
+    if (n.type === 'follow'  && !notifyFollows)        return false
+    return true
   })
-
-  const allNotifications = (rawNotifications.length > 0 ? rawNotifications : MOCK_NOTIFICATIONS)
-    .filter(n => {
-      if (dismissedIds.has(n.id))               return false
-      if (n.type === 'like'     && muteLikes)    return false
-      if (n.type === 'comment'  && muteComments) return false
-      if (n.type === 'follow'   && muteFollows)  return false
-      if (n.type === 'unfollow' && muteUnfollows) return false
-      return true
-    })
   const notifications = activeFilter === 'all'
     ? allNotifications
     : allNotifications.filter(n => n.type === activeFilter)
@@ -239,7 +301,7 @@ export default function AlertsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Bell size={20} color={colors.accent} />
         <Text style={styles.headerTitle}>Alerts</Text>
         {unreadCount > 0 && (
@@ -290,15 +352,15 @@ export default function AlertsScreen() {
           <View style={styles.toggleGroup}>
             <View style={styles.toggleRow}>
               <View style={styles.toggleLeft}>
-                <Heart size={16} color={muteLikes ? colors.textTertiary : colors.accent} fill={muteLikes ? undefined : colors.accent} />
+                <Heart size={16} color={notifyLikes ? colors.accent : colors.textTertiary} fill={notifyLikes ? colors.accent : undefined} />
                 <View>
                   <Text style={styles.toggleLabel}>Likes</Text>
                   <Text style={styles.toggleSub}>When someone likes your post</Text>
                 </View>
               </View>
               <Switch
-                value={!muteLikes}
-                onValueChange={v => setMuteLikes(!v)}
+                value={notifyLikes}
+                onValueChange={v => { setNotifyLikes(v); savePref('likes', v) }}
                 trackColor={{ false: colors.surface3, true: colors.accent }}
                 thumbColor="#fff"
               />
@@ -306,15 +368,15 @@ export default function AlertsScreen() {
             <View style={styles.toggleDivider} />
             <View style={styles.toggleRow}>
               <View style={styles.toggleLeft}>
-                <MessageCircle size={16} color={muteComments ? colors.textTertiary : colors.accent} />
+                <MessageCircle size={16} color={notifyComments ? colors.accent : colors.textTertiary} />
                 <View>
                   <Text style={styles.toggleLabel}>Comments</Text>
                   <Text style={styles.toggleSub}>When someone comments on your post</Text>
                 </View>
               </View>
               <Switch
-                value={!muteComments}
-                onValueChange={v => setMuteComments(!v)}
+                value={notifyComments}
+                onValueChange={v => { setNotifyComments(v); savePref('comments', v) }}
                 trackColor={{ false: colors.surface3, true: colors.accent }}
                 thumbColor="#fff"
               />
@@ -322,31 +384,15 @@ export default function AlertsScreen() {
             <View style={styles.toggleDivider} />
             <View style={styles.toggleRow}>
               <View style={styles.toggleLeft}>
-                <UserPlus size={16} color={muteFollows ? colors.textTertiary : colors.accent} />
+                <UserPlus size={16} color={notifyFollows ? colors.accent : colors.textTertiary} />
                 <View>
                   <Text style={styles.toggleLabel}>Follows</Text>
                   <Text style={styles.toggleSub}>When someone follows one of your builds</Text>
                 </View>
               </View>
               <Switch
-                value={!muteFollows}
-                onValueChange={v => setMuteFollows(!v)}
-                trackColor={{ false: colors.surface3, true: colors.accent }}
-                thumbColor="#fff"
-              />
-            </View>
-            <View style={styles.toggleDivider} />
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleLeft}>
-                <UserMinus size={16} color={muteUnfollows ? colors.textTertiary : colors.textSecondary} />
-                <View>
-                  <Text style={styles.toggleLabel}>Unfollows</Text>
-                  <Text style={styles.toggleSub}>When someone unfollows one of your builds</Text>
-                </View>
-              </View>
-              <Switch
-                value={!muteUnfollows}
-                onValueChange={v => setMuteUnfollows(!v)}
+                value={notifyFollows}
+                onValueChange={v => { setNotifyFollows(v); savePref('follows', v) }}
                 trackColor={{ false: colors.surface3, true: colors.accent }}
                 thumbColor="#fff"
               />
@@ -372,7 +418,10 @@ export default function AlertsScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
+        >
           {notifications.map(alert => {
             const goToActor = () => router.push(`/user/${alert.actorUsername}` as any)
             const goToContent = () => { if (alert.navPath) router.push(alert.navPath as any) }
@@ -435,7 +484,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
