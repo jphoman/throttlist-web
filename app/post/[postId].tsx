@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   Dimensions,
   Platform,
+  RefreshControl,
 } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import { useLocalSearchParams, router } from 'expo-router'
@@ -42,11 +43,22 @@ export default function PostDetailScreen() {
   const { user: authUser } = useAuth()
   const queryClient = useQueryClient()
 
-  const { data: post, isLoading } = useQuery({
+  const [refreshing, setRefreshing] = useState(false)
+
+  const { data: post, isLoading, refetch } = useQuery({
     queryKey: ['post', postId],
     queryFn: () => fetchPost(postId!),
     enabled: !!postId,
   })
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: ['comments', postId] }),
+    ])
+    setRefreshing(false)
+  }, [refetch, queryClient, postId])
 
   const { data: fetchedComments = [] } = useQuery({
     queryKey: ['comments', postId],
@@ -111,7 +123,10 @@ export default function PostDetailScreen() {
         )}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
+      >
         {/* Photo carousel */}
         {photos.length > 0 ? (
           <View style={styles.photoWrap}>

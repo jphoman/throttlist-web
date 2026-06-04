@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router, useFocusEffect } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Bell, Compass, ChevronDown, X as XIcon, ArrowUp } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
 import { fetchFollowedFeed, fetchForYouFeed, fetchFollowedBuilds, fetchLikedPostIds, toggleBuildFollow, fetchHasNewFeedPosts } from '@/lib/supabaseQueries'
@@ -24,15 +25,22 @@ import { useFeedFilters } from '@/store/feedFilters'
 import PostCard from '@/components/PostCard'
 import type { Part } from '@/types'
 
-const HEADER_HEIGHT = Platform.OS === 'ios' ? 62 : 50
+// HEADER_HEIGHT is now dynamic (computed per-device using safe-area insets).
+// These module-level constants are only used in StyleSheet.create; the actual
+// values used at render time come from the useFeedHeaderHeights() hook below.
+const HEADER_CONTENT_HEIGHT = 44   // height of the controls row below the notch
 const SORT_HEADER_HEIGHT = 36
-const COMBINED_HEADER_HEIGHT = HEADER_HEIGHT + SORT_HEADER_HEIGHT
 
 
 export default function FeedScreen() {
   const queryClient = useQueryClient()
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
+  const insets = useSafeAreaInsets()
+
+  // Dynamic header heights — adapt to Dynamic Island, notch, and flat-top devices
+  const HEADER_HEIGHT = insets.top + HEADER_CONTENT_HEIGHT
+  const COMBINED_HEADER_HEIGHT = HEADER_HEIGHT + SORT_HEADER_HEIGHT
 
   const [refreshing, setRefreshing] = useState(false)
   // Optimistic local follow state — builds tapped Follow on during this session.
@@ -269,8 +277,8 @@ export default function FeedScreen() {
         ]}
         pointerEvents="box-none"
       >
-        <View style={styles.mainHeader} pointerEvents="box-none">
-          <View style={styles.headerInner} pointerEvents="box-none">
+        <View style={[styles.mainHeader, { height: HEADER_HEIGHT }]} pointerEvents="box-none">
+          <View style={[styles.headerInner, { paddingTop: insets.top }]} pointerEvents="box-none">
             <View style={styles.headerSpacer} />
             <ThrottlistIcon size={60} color={colors.accent} />
             <Pressable style={styles.bellBtn} onPress={() => router.push('/alerts')}>
@@ -332,6 +340,7 @@ export default function FeedScreen() {
         style={[
           styles.newPostsBanner,
           {
+            top: COMBINED_HEADER_HEIGHT + 10,
             opacity: bannerAnim,
             transform: [{ translateY: bannerAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
           },
@@ -352,7 +361,7 @@ export default function FeedScreen() {
         onRequestClose={() => { setTypePickerOpen(false); setTypeSearch('') }}
       >
         <TouchableWithoutFeedback onPress={() => { setTypePickerOpen(false); setTypeSearch('') }}>
-          <View style={styles.pickerBackdrop}>
+          <View style={[styles.pickerBackdrop, { paddingTop: COMBINED_HEADER_HEIGHT + 8 }]}>
             <TouchableWithoutFeedback>
               <View style={styles.pickerMenu}>
                 <Text style={styles.pickerTitle}>BUILD TYPE</Text>
@@ -392,7 +401,7 @@ export default function FeedScreen() {
         onRequestClose={() => { setBuildPickerOpen(false); setBuildSearch('') }}
       >
         <TouchableWithoutFeedback onPress={() => { setBuildPickerOpen(false); setBuildSearch('') }}>
-          <View style={styles.pickerBackdrop}>
+          <View style={[styles.pickerBackdrop, { paddingTop: COMBINED_HEADER_HEIGHT + 8 }]}>
             <TouchableWithoutFeedback>
               <View style={styles.pickerMenu}>
                 <Text style={styles.pickerTitle}>BUILDS I FOLLOW</Text>
@@ -495,8 +504,8 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   headersWrap: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, backgroundColor: colors.bg },
-  mainHeader: { height: HEADER_HEIGHT },
-  headerInner: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  mainHeader: { overflow: 'hidden' },   // height set inline with dynamic inset value
+  headerInner: { height: HEADER_CONTENT_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
   headerSpacer: { width: 30 },
   bellBtn: { padding: 4, width: 30, alignItems: 'center' },
   sortHeader: {
@@ -530,7 +539,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: COMBINED_HEADER_HEIGHT + 8,
+    // paddingTop set inline in JSX using dynamic COMBINED_HEADER_HEIGHT
     paddingRight: 14,
   },
   pickerMenu: {
@@ -588,7 +597,7 @@ const styles = StyleSheet.create({
   skeletonFooter: { padding: 16, gap: 8 },
   newPostsBanner: {
     position: 'absolute',
-    top: COMBINED_HEADER_HEIGHT + 10,
+    top: 98, // fallback; overridden inline with dynamic COMBINED_HEADER_HEIGHT + 10
     left: 0,
     right: 0,
     zIndex: 20,

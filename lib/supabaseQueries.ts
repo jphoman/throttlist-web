@@ -571,28 +571,46 @@ export async function trackTagClick(
 
 // ─── Comment queries ──────────────────────────────────────────────────────────
 
-export async function fetchComments(postId: string): Promise<Comment[]> {
-  const { data, error } = await supabase
-    .from('comments')
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
-    .eq('post_id', postId)
-    .is('parent_id', null)
-    .order('created_at', { ascending: true })
-  if (error || !data) return []
-  return data.map((row: any) => ({
+function mapCommentRow(row: any, targetType: 'post' | 'build' = 'post'): Comment {
+  return {
     id: row.id,
     body: row.body,
     authorUserId: row.user_id,
-    likes: row.likes ?? 0,
-    targetType: 'post',
-    targetId: row.post_id,
+    parentId: row.parent_id ?? undefined,
+    likes: row.like_count ?? row.likes ?? 0,
+    targetType,
+    targetId: targetType === 'post' ? row.post_id : row.build_id,
     isPinned: row.is_pinned ? '1' : '0',
     createdAt: row.created_at,
     username: row.profiles?.username,
     displayName: row.profiles?.display_name,
     avatarUrl: row.profiles?.avatar_url ?? '',
     isPro: !!(row.profiles?.is_pro),
-  }))
+  }
+}
+
+/** Fetch all comments for a post, including nested replies. */
+export async function fetchComments(postId: string): Promise<Comment[]> {
+  const { data, error } = await supabase
+    .from('comments')
+    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .eq('post_id', postId)
+    .is('build_id', null)           // exclude build-scoped comments
+    .order('created_at', { ascending: true })
+  if (error || !data) return []
+  return data.map((row: any) => mapCommentRow(row, 'post'))
+}
+
+/** Fetch all comments scoped to a build (not to any specific post). */
+export async function fetchBuildComments(buildId: string): Promise<Comment[]> {
+  const { data, error } = await supabase
+    .from('comments')
+    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .eq('build_id', buildId)
+    .is('post_id', null)
+    .order('created_at', { ascending: true })
+  if (error || !data) return []
+  return data.map((row: any) => mapCommentRow(row, 'build'))
 }
 
 export async function addComment(userId: string, postId: string, body: string, parentId?: string): Promise<Comment> {
@@ -603,26 +621,45 @@ export async function addComment(userId: string, postId: string, body: string, p
     .single()
   if (error || !data) throw error
   await supabase.from('posts').update({ comment_count: supabase.rpc('increment', { x: 1 }) }).eq('id', postId)
-  return {
-    id: data.id,
-    body: data.body,
-    authorUserId: data.user_id,
-    parentId: data.parent_id ?? undefined,
-    likes: 0,
-    targetType: 'post',
-    targetId: data.post_id,
-    isPinned: '0',
-    createdAt: data.created_at,
-    username: data.profiles?.username,
-    displayName: data.profiles?.display_name,
-    avatarUrl: data.profiles?.avatar_url ?? '',
-    isPro: !!(data.profiles?.is_pro),
+  return mapCommentRow(data, 'post')
+}
+
+/** Add a comment scoped to a build (not attached to any specific post). */
+export async function addBuildComment(userId: string, buildId: string, body: string, parentId?: string): Promise<Comment> {
+  const { data, error } = await supabase
+    .from('comments')
+    .insert({ user_id: userId, build_id: buildId, body, parent_id: parentId ?? null })
+    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .single()
+  if (error || !data) throw error
+  return mapCommentRow(data, 'build')
+}
+
+export async function deleteComment(commentId: string, postId?: string): Promise<void> {
+  await supabase.from('comments').delete().eq('id', commentId)
+  if (postId) {
+    await supabase.from('posts').update({ comment_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', postId)
   }
 }
 
-export async function deleteComment(commentId: string, postId: string): Promise<void> {
-  await supabase.from('comments').delete().eq('id', commentId)
-  await supabase.from('posts').update({ comment_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', postId)
+/** Toggle a like on a comment. Returns the new liked state. */
+export async function toggleCommentLike(userId: string, commentId: string, currentlyLiked: boolean): Promise<void> {
+  if (currentlyLiked) {
+    await supabase.from('comment_likes').delete().eq('user_id', userId).eq('comment_id', commentId)
+  } else {
+    await supabase.from('comment_likes').insert({ user_id: userId, comment_id: commentId })
+  }
+}
+
+/** Fetch the comment IDs the user has liked (for a given set of comment IDs). */
+export async function fetchLikedCommentIds(userId: string, commentIds: string[]): Promise<Set<string>> {
+  if (!commentIds.length) return new Set()
+  const { data } = await supabase
+    .from('comment_likes')
+    .select('comment_id')
+    .eq('user_id', userId)
+    .in('comment_id', commentIds)
+  return new Set((data ?? []).map((r: any) => r.comment_id))
 }
 
 // ─── Post mutations ───────────────────────────────────────────────────────────

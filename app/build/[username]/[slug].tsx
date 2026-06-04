@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   FlatList,
   TextInput,
+  RefreshControl,
 } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import { useLocalSearchParams, router } from 'expo-router'
@@ -36,7 +37,8 @@ import {
   fetchBuildFollowers,
   fetchFollowedBuildIds,
   toggleBuildFollow,
-  addComment,
+  addBuildComment,
+  fetchBuildComments,
   updatePost,
   updateBuild,
   deletePost,
@@ -92,12 +94,26 @@ export default function BuildProfileScreen() {
   const [localComments, setLocalComments] = useState<Comment[]>([])
   const [replyingTo, setReplyingTo] = useState<{ commentId: string; username: string } | null>(null)
   const commentInputRef = useRef<any>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['build-profile', username, slug],
     queryFn: () => fetchBuildProfile(username!, slug!),
     enabled: !!username && !!slug,
   })
+
+  // Build-scoped comments from DB
+  const { data: dbComments = [], refetch: refetchComments } = useQuery({
+    queryKey: ['build-comments', data?.build?.id],
+    queryFn: () => fetchBuildComments(data!.build!.id),
+    enabled: !!data?.build?.id,
+  })
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    await Promise.all([refetch(), refetchComments()])
+    setRefreshing(false)
+  }
 
   const { data: followedIds } = useQuery({
     queryKey: ['followed-build-ids', authUser?.id],
@@ -181,11 +197,12 @@ export default function BuildProfileScreen() {
     )
   }
 
-  const { user, build, parts, comments } = data
+  const { user, build, parts } = data
   const isOwner = build.userId === authUser?.id
   const isPro = user.proTier === '1' || user.proTier === 1
 
-  const allComments = [...comments, ...localComments]
+  // Merge DB build comments with optimistic local ones
+  const allComments = [...dbComments, ...localComments]
 
   async function handleFollowToggle() {
     if (!authUser?.id) return
@@ -243,7 +260,10 @@ export default function BuildProfileScreen() {
         )}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
+      >
         {/* Cover photo */}
         {effectiveCoverPhotoUrl ? (
           <Image source={{ uri: effectiveCoverPhotoUrl }} style={styles.cover} resizeMode="cover" />
@@ -483,14 +503,21 @@ export default function BuildProfileScreen() {
                 if (!body || !authUser || !data?.build?.id) return
                 setCommentText('')
                 setReplyingTo(null)
+                const tempId = `local_${Date.now()}`
+                const optimistic: Comment = {
+                  id: tempId, body, authorUserId: authUser.id,
+                  parentId: replyingTo?.commentId,
+                  targetType: 'build', targetId: data.build.id,
+                  likes: 0, isPinned: '0', createdAt: new Date().toISOString(),
+                  username: authUser.email?.split('@')[0],
+                  displayName: authUser.email?.split('@')[0], avatarUrl: '',
+                }
+                setLocalComments(prev => [...prev, optimistic])
                 try {
-                  // posts on a build page are per-post; use first visible post or a build-level comment
-                  // For now add to the build's most-recent post as a thread
-                  const targetPostId = data.posts[0]?.id
-                  if (!targetPostId) return
-                  const newComment = await addComment(authUser.id, targetPostId, body)
-                  setLocalComments(prev => [...prev, newComment])
-                } catch { /* silently fail */ }
+                  await addBuildComment(authUser.id, data.build.id, body, replyingTo?.commentId)
+                  setLocalComments(prev => prev.filter(c => c.id !== tempId))
+                  refetchComments()
+                } catch { /* optimistic stays on failure */ }
               }}
             >
               <Send size={16} color="#fff" />

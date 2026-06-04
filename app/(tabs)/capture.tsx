@@ -7,7 +7,9 @@ import {
   Platform,
   ScrollView,
   Image,
+  Animated,
 } from 'react-native'
+import * as Haptics from 'expo-haptics'
 import { router } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import { CameraView, useCameraPermissions } from 'expo-camera'
@@ -31,12 +33,26 @@ export default function CaptureScreen() {
   const [permission, requestPermission] = useCameraPermissions()
   const [flash, setFlash] = useState(false)
   const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null)
+  const [capturing, setCapturing] = useState(false)
   const cameraRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const flashAnim = useRef(new Animated.Value(0)).current
 
   // Once a photo is taken we switch the CameraView to inactive so the
   // green privacy indicator turns off while we navigate to compose.
   const [photoTaken, setPhotoTaken] = useState(false)
+
+  function fireShutterFeedback() {
+    // Haptic impact so the user feels the capture
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
+    // White flash: fade in fast, fade out slower — mirrors iOS camera shutter
+    flashAnim.setValue(1)
+    Animated.timing(flashAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start()
+  }
 
   // Settings panel state
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -140,20 +156,24 @@ export default function CaptureScreen() {
   }
 
   async function captureNow() {
-    if (Platform.OS === 'web') {
-      const video = cameraRef.current?.querySelector('video') as HTMLVideoElement | null
-      if (!video) { handlePickFromGallery(); return }
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      canvas.getContext('2d')?.drawImage(video, 0, 0)
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
-      navigateWithPhoto(dataUrl)
-      return
-    }
-    // Native — take a photo with the camera
-    if (cameraRef.current) {
-      try {
+    if (capturing) return   // prevent double-tap
+    setCapturing(true)
+    fireShutterFeedback()
+
+    try {
+      if (Platform.OS === 'web') {
+        const video = cameraRef.current?.querySelector('video') as HTMLVideoElement | null
+        if (!video) { handlePickFromGallery(); return }
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        canvas.getContext('2d')?.drawImage(video, 0, 0)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        navigateWithPhoto(dataUrl)
+        return
+      }
+      // Native — take a photo with the camera
+      if (cameraRef.current) {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.85,
           skipProcessing: false,
@@ -166,11 +186,13 @@ export default function CaptureScreen() {
           navigateWithPhoto(photo.uri, photo.base64 ?? null)
           return
         }
-      } catch {
-        // fall through to gallery
       }
+      handlePickFromGallery()
+    } catch {
+      handlePickFromGallery()
+    } finally {
+      setCapturing(false)
     }
-    handlePickFromGallery()
   }
 
   async function handleShutter() {
@@ -278,6 +300,12 @@ export default function CaptureScreen() {
           <View style={[styles.gridLineV, { left: '66.6%' }]} />
         </View>
       )}
+
+      {/* Shutter flash overlay — white flash that fades out after capture */}
+      <Animated.View
+        style={[styles.flashOverlay, { opacity: flashAnim }]}
+        pointerEvents="none"
+      />
 
       {/* Countdown overlay */}
       {countdown !== null && (
@@ -387,9 +415,13 @@ export default function CaptureScreen() {
         </Pressable>
       )}
 
-      {/* Shutter */}
-      <Pressable style={styles.shutter} onPress={handleShutter}>
-        <View style={styles.shutterInner} />
+      {/* Shutter — disabled while capture is in progress to prevent double-tap */}
+      <Pressable
+        style={[styles.shutter, capturing && { opacity: 0.5 }]}
+        onPress={handleShutter}
+        disabled={capturing}
+      >
+        <View style={[styles.shutterInner, capturing && styles.shutterCapturing]} />
       </Pressable>
 
       {/* Build selector */}
@@ -517,6 +549,15 @@ const styles = StyleSheet.create({
   gridOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-evenly', alignItems: 'center' },
   gridLineH: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
   gridLineV: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#fff',
+    zIndex: 25,
+  },
+  shutterCapturing: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center', justifyContent: 'center',

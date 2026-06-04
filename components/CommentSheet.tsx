@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Heart, Send, ProBadge } from '@/components/Icons'
-import { fetchComments, addComment, deleteComment } from '@/lib/supabaseQueries'
+import { fetchComments, addComment, deleteComment, toggleCommentLike, fetchLikedCommentIds } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, timeAgo } from '@/constants/throttlist'
 import { router } from 'expo-router'
@@ -30,13 +30,14 @@ interface CommentRowProps {
   comment: Comment
   isMine: boolean
   isReply?: boolean
+  isLiked: boolean
   onDelete: (id: string) => void
   onReport: (id: string) => void
   onReply: (comment: Comment) => void
+  onToggleLike: (comment: Comment) => void
 }
 
-function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: CommentRowProps) {
-  const [liked, setLiked] = useState(false)
+function CommentRow({ comment, isMine, isReply, isLiked, onDelete, onReport, onReply, onToggleLike }: CommentRowProps) {
   const [actionsOpen, setActionsOpen] = useState(false)
 
   return (
@@ -105,14 +106,14 @@ function CommentRow({ comment, isMine, isReply, onDelete, onReport, onReply }: C
         </View>
       </Pressable>
 
-      <Pressable style={styles.likeCol} onPress={() => setLiked(v => !v)}>
+      <Pressable style={styles.likeCol} onPress={() => onToggleLike(comment)}>
         <Heart
           size={isReply ? 14 : 16}
-          color={liked ? colors.accent : colors.textTertiary}
-          fill={liked ? colors.accent : 'none'}
+          color={isLiked ? colors.accent : colors.textTertiary}
+          fill={isLiked ? colors.accent : 'none'}
         />
-        <Text style={[styles.likeCount, liked && { color: colors.accent }]}>
-          {comment.likes + (liked ? 1 : 0)}
+        <Text style={[styles.likeCount, isLiked && { color: colors.accent }]}>
+          {comment.likes + (isLiked ? 1 : 0)}
         </Text>
       </Pressable>
     </View>
@@ -127,6 +128,8 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
   const [localComments, setLocalComments] = useState<Comment[]>([])
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
+  // Optimistic comment likes: map of commentId → liked state
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
   const inputRef = useRef<TextInput>(null)
 
   const { data: fetched = [] } = useQuery({
@@ -134,6 +137,13 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     queryFn: () => fetchComments(postId),
     enabled: visible && !!postId,
   })
+
+  // Load which comments the current user has liked
+  useEffect(() => {
+    if (!authUser?.id || fetched.length === 0) return
+    const ids = fetched.map(c => c.id)
+    fetchLikedCommentIds(authUser.id, ids).then(liked => setLikedIds(liked))
+  }, [authUser?.id, fetched.length])
 
   // Merge: fetched (minus deleted) + local optimistic
   const allComments = [
@@ -172,37 +182,63 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     const body = draft.trim()
     if (!body || !authUser) return
     setSending(true)
+    setDraft('')
+    setReplyingTo(null)
 
     const parentId = replyingTo
       ? (replyingTo.parentId ?? replyingTo.id)
       : undefined
 
+    // Optimistic: add a placeholder immediately so it feels instant
+    const tempId = `local_${Date.now()}`
+    const optimistic: Comment = {
+      id: tempId,
+      body,
+      authorUserId: authUser.id,
+      parentId,
+      targetType: 'post',
+      targetId: postId,
+      likes: 0,
+      isPinned: '0',
+      createdAt: new Date().toISOString(),
+      username: authUser.email?.split('@')[0],
+      displayName: authUser.email?.split('@')[0],
+      avatarUrl: '',
+    }
+    setLocalComments(prev => [...prev, optimistic])
+
     try {
-      const newComment = await addComment(authUser.id, postId, body, parentId)
-      setLocalComments(prev => [...prev, newComment])
+      await addComment(authUser.id, postId, body, parentId)
+      // Remove optimistic placeholder — the refetch will include the real DB row
+      setLocalComments(prev => prev.filter(c => c.id !== tempId))
       queryClient.invalidateQueries({ queryKey: ['comments', postId] })
-    } catch (e) {
-      // fallback: optimistic only
-      const fallback: Comment = {
-        id: `local_${Date.now()}`,
-        body,
-        authorUserId: authUser.id,
-        parentId,
-        targetType: 'post',
-        targetId: postId,
-        likes: 0,
-        isPinned: '0',
-        createdAt: new Date().toISOString(),
-        username: authUser.email?.split('@')[0],
-        displayName: authUser.email?.split('@')[0],
-        avatarUrl: '',
-      }
-      setLocalComments(prev => [...prev, fallback])
+    } catch {
+      // Leave the optimistic placeholder (marked with local_ prefix) visible so
+      // the user knows their comment is there, even if it didn't save
     } finally {
       setSending(false)
-      setDraft('')
-      setReplyingTo(null)
     }
+  }
+
+  function handleToggleCommentLike(comment: Comment) {
+    if (!authUser?.id) return
+    const wasLiked = likedIds.has(comment.id)
+    // Optimistic update
+    setLikedIds(prev => {
+      const next = new Set(prev)
+      if (wasLiked) next.delete(comment.id)
+      else next.add(comment.id)
+      return next
+    })
+    // Persist — rollback on failure
+    toggleCommentLike(authUser.id, comment.id, wasLiked).catch(() => {
+      setLikedIds(prev => {
+        const next = new Set(prev)
+        if (wasLiked) next.add(comment.id)
+        else next.delete(comment.id)
+        return next
+      })
+    })
   }
 
   async function handleDelete(id: string) {
@@ -250,9 +286,11 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
                 comment={item.comment}
                 isMine={item.comment.authorUserId === authUser?.id}
                 isReply={item.isReply}
+                isLiked={likedIds.has(item.comment.id)}
                 onDelete={handleDelete}
                 onReport={handleReport}
                 onReply={handleReply}
+                onToggleLike={handleToggleCommentLike}
               />
             )}
             ListEmptyComponent={
