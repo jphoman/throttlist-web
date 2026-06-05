@@ -16,6 +16,7 @@ import { ArrowLeft, Send as SendIcon } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import { useAuth } from '@/lib/auth'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   fetchProfile,
   fetchDirectMessages,
@@ -43,6 +44,7 @@ export default function ConversationScreen() {
   const { user: authUser } = useAuth()
   const myId = authUser?.id ?? ''
   const insets = useSafeAreaInsets()
+  const queryClient = useQueryClient()
 
   const [otherUser, setOtherUser] = useState<User | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
@@ -66,8 +68,12 @@ export default function ConversationScreen() {
       setLoading(false)
     })
 
-    // Mark incoming messages as read
-    markMessagesRead(myId, otherUserId)
+    // Mark all incoming messages as read, then invalidate inbox + tab badge
+    // so the unread count clears immediately when the user navigates back
+    markMessagesRead(myId, otherUserId).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
+      queryClient.invalidateQueries({ queryKey: ['unread-dms', myId] })
+    })
 
     return () => { active = false }
   }, [myId, otherUserId])
@@ -102,7 +108,10 @@ export default function ConversationScreen() {
               createdAt: msg.created_at,
             }]
           })
-          markMessagesRead(myId, otherUserId)
+          markMessagesRead(myId, otherUserId).then(() => {
+            queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
+            queryClient.invalidateQueries({ queryKey: ['unread-dms', myId] })
+          })
         }
       )
       .subscribe()

@@ -924,6 +924,17 @@ export async function fetchConversations(userId: string): Promise<DMConversation
   return Array.from(byPartner.values())
 }
 
+/** Total unread DM count across all conversations — used for the tab-bar badge. */
+export async function fetchTotalUnreadMessageCount(userId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('recipient_id', userId)
+    .eq('is_read', false)
+  if (error) return 0
+  return count ?? 0
+}
+
 export async function fetchDirectMessages(userId: string, otherUserId: string): Promise<DirectMessage[]> {
   const { data, error } = await supabase
     .from('messages')

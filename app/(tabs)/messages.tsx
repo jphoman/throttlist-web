@@ -18,6 +18,7 @@ import { router, useFocusEffect } from 'expo-router'
 import InitialsAvatar from '@/components/InitialsAvatar'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchConversations,
   searchProfiles,
@@ -44,46 +45,44 @@ function relativeTime(iso: string): string {
 export default function MessagesScreen() {
   const { user: authUser } = useAuth()
   const userId = authUser?.id ?? ''
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [conversations, setConversations] = useState<DMConversation[]>([])
-  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
   const [userSearch, setUserSearch] = useState('')
   const [userResults, setUserResults] = useState<User[]>([])
   const [searching, setSearching] = useState(false)
 
-  function loadConversations(showSpinner = false) {
-    if (!userId) return
-    if (showSpinner) setLoading(true)
-    let active = true
-    fetchConversations(userId).then(data => {
-      if (active) { setConversations(data); setLoading(false) }
-    })
-    return () => { active = false }
-  }
+  // TanStack Query — shared key so conversation/[id].tsx can invalidate after mark-read
+  const { data: conversations = [], isLoading: loading, refetch } = useQuery({
+    queryKey: ['conversations', userId],
+    queryFn: () => fetchConversations(userId),
+    enabled: !!userId,
+    staleTime: 0,   // always re-fetch when invalidated
+  })
 
-  // Reload on tab focus
-  useFocusEffect(useCallback(() => loadConversations(loading), [userId]))
+  // Refetch every time this tab gains focus
+  useFocusEffect(useCallback(() => { if (userId) refetch() }, [userId, refetch]))
 
   // Pull-to-refresh
   async function handleRefresh() {
     setRefreshing(true)
-    await fetchConversations(userId).then(setConversations)
+    await refetch()
     setRefreshing(false)
   }
 
-  // Realtime — re-fetch conversation list when any message in this user's
-  // inbox changes (covers both new arrivals and is_read flips from the
-  // conversation screen, clearing the unread badge without requiring navigation)
+  // Realtime — invalidate query on new INSERT so the inbox badge updates live
   useEffect(() => {
     if (!userId) return
     const channel = supabase
       .channel(`inbox-${userId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages', filter: `recipient_id=eq.${userId}` },
-        () => { fetchConversations(userId).then(setConversations) }
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `recipient_id=eq.${userId}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['conversations', userId] })
+          queryClient.invalidateQueries({ queryKey: ['unread-dms', userId] })
+        }
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
