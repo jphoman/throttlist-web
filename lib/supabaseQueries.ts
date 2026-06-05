@@ -976,12 +976,17 @@ export async function sendDirectMessage(
 }
 
 export async function markMessagesRead(userId: string, otherUserId: string): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('messages')
     .update({ is_read: true })
     .eq('recipient_id', userId)
     .eq('sender_id', otherUserId)
     .eq('is_read', false)
+  if (error) {
+    // Likely cause: missing RLS UPDATE policy on messages table.
+    // Run supabase/messages-rls.sql to fix.
+    console.error('[markMessagesRead] failed:', error)
+  }
 }
 
 // ─── Build-specific queries ───────────────────────────────────────────────────
