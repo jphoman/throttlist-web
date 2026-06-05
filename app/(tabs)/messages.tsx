@@ -61,8 +61,19 @@ export default function MessagesScreen() {
     staleTime: 0,   // always re-fetch when invalidated
   })
 
-  // Refetch every time this tab gains focus
-  useFocusEffect(useCallback(() => { if (userId) refetch() }, [userId, refetch]))
+  // Refetch when tab gains focus — slight delay ensures any in-flight
+  // markMessagesRead call has committed before we fetch fresh counts
+  useFocusEffect(useCallback(() => {
+    if (!userId) return
+    // Immediate refetch for instant data
+    refetch()
+    // Delayed refetch as a fallback in case markMessagesRead was still in-flight
+    const t = setTimeout(() => {
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['unread-dms', userId] })
+    }, 600)
+    return () => clearTimeout(t)
+  }, [userId, refetch]))
 
   // Pull-to-refresh
   async function handleRefresh() {

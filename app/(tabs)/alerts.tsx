@@ -252,10 +252,13 @@ export default function AlertsScreen() {
   })
 
   // Mark all read + refetch whenever this tab gains focus
+  // After marking read, invalidate the feed bell badge query so it turns grey
   useFocusEffect(
     useCallback(() => {
       if (!userId) return
-      markNotificationsRead(userId)
+      markNotificationsRead(userId).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['unread-notifications', userId] })
+      })
       refetch()
     }, [userId])
   )

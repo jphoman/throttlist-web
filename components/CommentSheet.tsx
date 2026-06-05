@@ -128,6 +128,7 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
   const [localComments, setLocalComments] = useState<Comment[]>([])
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
   // Optimistic comment likes: map of commentId → liked state
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
   const inputRef = useRef<TextInput>(null)
@@ -207,14 +208,18 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     }
     setLocalComments(prev => [...prev, optimistic])
 
+    setSendError(null)
     try {
       await addComment(authUser.id, postId, body, parentId)
       // Remove optimistic placeholder — the refetch will include the real DB row
       setLocalComments(prev => prev.filter(c => c.id !== tempId))
       queryClient.invalidateQueries({ queryKey: ['comments', postId] })
-    } catch {
-      // Leave the optimistic placeholder (marked with local_ prefix) visible so
-      // the user knows their comment is there, even if it didn't save
+    } catch (e: any) {
+      // Show the actual error so we can diagnose DB/RLS issues
+      const msg = e?.message ?? JSON.stringify(e) ?? 'Failed to save comment'
+      setSendError(msg)
+      console.error('[CommentSheet] addComment failed:', e)
+      // Keep optimistic visible with a "failed" note
     } finally {
       setSending(false)
     }
@@ -312,6 +317,12 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
               <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
                 <X size={14} color={colors.textTertiary} />
               </Pressable>
+            </View>
+          )}
+
+          {sendError && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>⚠ {sendError}</Text>
             </View>
           )}
 
@@ -551,6 +562,18 @@ const styles = StyleSheet.create({
   replyBannerUsername: {
     color: colors.textPrimary,
     fontWeight: '600',
+  },
+  errorBanner: {
+    backgroundColor: '#7f1d1d',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#ef4444',
+  },
+  errorBannerText: {
+    color: '#fca5a5',
+    fontSize: 12,
+    lineHeight: 16,
   },
   inputRow: {
     flexDirection: 'row',

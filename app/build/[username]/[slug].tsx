@@ -95,7 +95,9 @@ export default function BuildProfileScreen() {
   const [commentText, setCommentText] = useState('')
   const [localComments, setLocalComments] = useState<Comment[]>([])
   const [replyingTo, setReplyingTo] = useState<{ commentId: string; username: string } | null>(null)
+  const [commentError, setCommentError] = useState<string | null>(null)
   const commentInputRef = useRef<any>(null)
+  const scrollViewRef = useRef<any>(null)
   const [refreshing, setRefreshing] = useState(false)
   const insets = useSafeAreaInsets()
 
@@ -268,6 +270,7 @@ export default function BuildProfileScreen() {
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />}
       >
@@ -483,6 +486,11 @@ export default function BuildProfileScreen() {
 
       {activeTab === 'comments' && (
         <View style={[styles.commentInputBar, { paddingBottom: 10 + insets.bottom }]}>
+          {commentError && (
+            <View style={styles.commentError}>
+              <Text style={styles.commentErrorText}>⚠ {commentError}</Text>
+            </View>
+          )}
           {replyingTo && (
             <View style={styles.replyingBanner}>
               <Text style={styles.replyingText}>Replying to @{replyingTo.username}</Text>
@@ -510,6 +518,7 @@ export default function BuildProfileScreen() {
                 if (!body || !authUser || !data?.build?.id) return
                 setCommentText('')
                 setReplyingTo(null)
+                setCommentError(null)
                 const tempId = `local_${Date.now()}`
                 const optimistic: Comment = {
                   id: tempId, body, authorUserId: authUser.id,
@@ -520,11 +529,18 @@ export default function BuildProfileScreen() {
                   displayName: authUser.email?.split('@')[0], avatarUrl: '',
                 }
                 setLocalComments(prev => [...prev, optimistic])
+                // Scroll to bottom so new comment is visible above the keyboard
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50)
                 try {
                   await addBuildComment(authUser.id, data.build.id, body, replyingTo?.commentId)
                   setLocalComments(prev => prev.filter(c => c.id !== tempId))
                   refetchComments()
-                } catch { /* optimistic stays on failure */ }
+                } catch (e: any) {
+                  const msg = e?.message ?? JSON.stringify(e) ?? 'Failed to save comment'
+                  setCommentError(msg)
+                  console.error('[BuildPage] addBuildComment failed:', e)
+                  // optimistic stays visible
+                }
               }}
             >
               <Send size={16} color="#fff" />
@@ -1145,6 +1161,16 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
   },
+  commentError: {
+    backgroundColor: '#7f1d1d',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  commentErrorText: { color: '#fca5a5', fontSize: 12 },
   replyingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
