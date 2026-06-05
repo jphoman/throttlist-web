@@ -214,6 +214,20 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
       // Remove optimistic placeholder — the refetch will include the real DB row
       setLocalComments(prev => prev.filter(c => c.id !== tempId))
       queryClient.invalidateQueries({ queryKey: ['comments', postId] })
+
+      // Optimistically increment commentCount in every cached feed/post query
+      // so the icon updates immediately without waiting for a full refetch
+      const bumpPost = (old: any) => {
+        if (!old) return old
+        if (Array.isArray(old))
+          return old.map((p: any) =>
+            p.id === postId ? { ...p, commentCount: (p.commentCount ?? 0) + 1 } : p
+          )
+        if (old.id === postId) return { ...old, commentCount: (old.commentCount ?? 0) + 1 }
+        return old
+      }
+      queryClient.setQueriesData({ queryKey: ['feed-posts'] }, bumpPost)
+      queryClient.setQueriesData({ queryKey: ['post', postId] }, bumpPost)
     } catch (e: any) {
       // Show the actual error so we can diagnose DB/RLS issues
       const msg = e?.message ?? JSON.stringify(e) ?? 'Failed to save comment'
@@ -251,8 +265,19 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     try {
       await deleteComment(id, postId)
       queryClient.invalidateQueries({ queryKey: ['comments', postId] })
+      // Decrement count in feed/post caches
+      const dropPost = (old: any) => {
+        if (!old) return old
+        if (Array.isArray(old))
+          return old.map((p: any) =>
+            p.id === postId ? { ...p, commentCount: Math.max(0, (p.commentCount ?? 1) - 1) } : p
+          )
+        if (old.id === postId) return { ...old, commentCount: Math.max(0, (old.commentCount ?? 1) - 1) }
+        return old
+      }
+      queryClient.setQueriesData({ queryKey: ['feed-posts'] }, dropPost)
+      queryClient.setQueriesData({ queryKey: ['post', postId] }, dropPost)
     } catch {
-      // undo optimistic
       setDeletedIds(prev => { const s = new Set(prev); s.delete(id); return s })
     }
   }
