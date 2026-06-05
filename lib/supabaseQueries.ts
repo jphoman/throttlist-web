@@ -69,6 +69,7 @@ function mapBuild(row: any): Build {
     avatarUrl: row.profiles?.avatar_url ?? '',
     ownerIsPro: row.profiles?.is_pro ?? false,
     partCount: row.parts?.[0]?.count ?? 0,
+    postCount: row.posts?.[0]?.count ?? 0,
   }
 }
 
@@ -148,7 +149,7 @@ export async function updateProfile(userId: string, updates: {
 export async function fetchUserBuilds(userId: string): Promise<Build[]> {
   const { data, error } = await supabase
     .from('builds')
-    .select('*, profiles!builds_user_id_fkey(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!builds_user_id_fkey(username, display_name, avatar_url, is_pro), posts(count), parts(count)')
     .eq('user_id', userId)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
@@ -1061,7 +1062,7 @@ export async function saveProductTag(tag: {
 export async function fetchBuildFollowers(buildId: string): Promise<User[]> {
   const { data, error } = await supabase
     .from('build_follows')
-    .select('profiles!inner(id, username, display_name, avatar_url, is_pro, bio, location, instagram_handle, youtube_handle, created_at)')
+    .select('profiles!build_follows_follower_id_fkey(id, username, display_name, avatar_url, is_pro, bio, location, instagram_handle, youtube_handle, created_at)')
     .eq('build_id', buildId)
   if (error || !data) return []
   return data.map((row: any) => mapProfile(row.profiles))

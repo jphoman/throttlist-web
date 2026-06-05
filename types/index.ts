@@ -37,6 +37,7 @@ export interface Build {
   avatarUrl?: string
   ownerIsPro?: boolean
   partCount?: number
+  postCount?: number
 }
 
 export interface Part {

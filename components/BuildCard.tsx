@@ -1,8 +1,7 @@
 import React from 'react'
 import { View, Text, StyleSheet, Pressable, Image } from 'react-native'
-import { Users, Tag, MessageCircle } from '@/components/Icons'
+import { Users, Tag, Grid } from '@/components/Icons'
 import { colors, formatFollowers } from '@/constants/throttlist'
-import { MOCK_PARTS, MOCK_COMMENTS } from '@/lib/data'
 import type { Build } from '@/types'
 
 interface BuildCardProps {
@@ -23,9 +22,6 @@ export default function BuildCard({
   const tags: string[] = (() => {
     try { return JSON.parse(build.tags) } catch { return [] }
   })()
-
-  const tagCount = MOCK_PARTS.filter(p => p.buildId === build.id).length
-  const commentCount = MOCK_COMMENTS.filter(c => c.targetId === build.id).length
 
   return (
     <Pressable style={styles.card} onPress={onPress}>
@@ -66,7 +62,7 @@ export default function BuildCard({
           )}
         </View>
 
-        {/* Stats */}
+        {/* Stats — all from live DB data */}
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Users size={12} color={colors.textTertiary} />
@@ -74,13 +70,13 @@ export default function BuildCard({
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Tag size={12} color={colors.textTertiary} />
-            <Text style={styles.statText}>{tagCount}</Text>
+            <Grid size={12} color={colors.textTertiary} />
+            <Text style={styles.statText}>{build.postCount ?? 0}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <MessageCircle size={12} color={colors.textTertiary} />
-            <Text style={styles.statText}>{commentCount}</Text>
+            <Tag size={12} color={colors.textTertiary} />
+            <Text style={styles.statText}>{build.partCount ?? 0}</Text>
           </View>
         </View>
 

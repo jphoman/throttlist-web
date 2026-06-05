@@ -581,7 +581,8 @@ export default function BuildProfileScreen() {
         animationType="slide"
         onRequestClose={() => setFollowersSheetOpen(false)}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setFollowersSheetOpen(false)} />
+        <View style={styles.sheetContainer}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setFollowersSheetOpen(false)} />
         <View style={styles.followersSheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
@@ -615,6 +616,7 @@ export default function BuildProfileScreen() {
             )}
           />
           <View style={{ height: Platform.OS === 'ios' ? 28 : 12 }} />
+        </View>
         </View>
       </Modal>
 
@@ -900,6 +902,11 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   // Followers sheet
+  sheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
