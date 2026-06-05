@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, Send as SendIcon } from '@/components/Icons'
 import { colors } from '@/constants/throttlist'
 import InitialsAvatar from '@/components/InitialsAvatar'
@@ -41,6 +42,7 @@ export default function ConversationScreen() {
   const { id: otherUserId } = useLocalSearchParams<{ id: string }>()
   const { user: authUser } = useAuth()
   const myId = authUser?.id ?? ''
+  const insets = useSafeAreaInsets()
 
   const [otherUser, setOtherUser] = useState<User | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
@@ -171,7 +173,7 @@ export default function ConversationScreen() {
       keyboardVerticalOffset={0}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textSecondary} />
         </Pressable>
@@ -261,7 +263,7 @@ export default function ConversationScreen() {
       />
 
       {/* Compose bar */}
-      <View style={styles.compose}>
+      <View style={[styles.compose, { paddingBottom: 10 + insets.bottom }]}>
         <TextInput
           style={[styles.input, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
           placeholder="Message…"
@@ -311,7 +313,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
+    paddingTop: 8,    // base; insets.top applied inline
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -417,7 +419,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 10,  // base; insets.bottom added inline
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.bg,

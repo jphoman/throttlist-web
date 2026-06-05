@@ -17,7 +17,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Bell, Compass, ChevronDown, X as XIcon, ArrowUp } from '@/components/Icons'
 import { ThrottlistIcon } from '@/components/ThrottlistLogo'
-import { fetchFollowedFeed, fetchForYouFeed, fetchFollowedBuilds, fetchLikedPostIds, toggleBuildFollow, fetchHasNewFeedPosts } from '@/lib/supabaseQueries'
+import { fetchFollowedFeed, fetchForYouFeed, fetchFollowedBuilds, fetchLikedPostIds, toggleBuildFollow, fetchHasNewFeedPosts, fetchUnreadNotificationCount } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors } from '@/constants/throttlist'
 import { BUILD_CATEGORIES } from '@/constants/buildTypes'
@@ -125,6 +125,15 @@ export default function FeedScreen() {
     queryFn: () => fetchLikedPostIds(userId),
     enabled: !!userId,
     staleTime: 60_000,
+  })
+
+  // Unread notification count for the bell badge
+  const { data: unreadAlertCount = 0 } = useQuery({
+    queryKey: ['unread-notifications', userId],
+    queryFn: () => fetchUnreadNotificationCount(userId),
+    enabled: !!userId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   })
 
   // Track the newest post time — must come after `posts` is declared above
@@ -282,7 +291,8 @@ export default function FeedScreen() {
             <View style={styles.headerSpacer} />
             <ThrottlistIcon size={60} color={colors.accent} />
             <Pressable style={styles.bellBtn} onPress={() => router.push('/alerts')}>
-              <Bell size={22} color={colors.textSecondary} />
+              <Bell size={22} color={unreadAlertCount > 0 ? colors.accent : colors.textSecondary} />
+              {unreadAlertCount > 0 && <View style={styles.bellDot} />}
             </Pressable>
           </View>
         </View>
@@ -510,6 +520,12 @@ const styles = StyleSheet.create({
   headerInner: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
   headerSpacer: { width: 30 },
   bellBtn: { padding: 4, width: 30, alignItems: 'center' },
+  bellDot: {
+    position: 'absolute', top: 2, right: 2,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: colors.accent,
+    borderWidth: 1.5, borderColor: colors.bg,
+  },
   sortHeader: {
     height: SORT_HEADER_HEIGHT,
     flexDirection: 'row',

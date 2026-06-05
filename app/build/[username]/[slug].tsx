@@ -11,7 +11,9 @@ import {
   FlatList,
   TextInput,
   RefreshControl,
+  KeyboardAvoidingView,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as WebBrowser from 'expo-web-browser'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -95,6 +97,7 @@ export default function BuildProfileScreen() {
   const [replyingTo, setReplyingTo] = useState<{ commentId: string; username: string } | null>(null)
   const commentInputRef = useRef<any>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const insets = useSafeAreaInsets()
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['build-profile', username, slug],
@@ -247,7 +250,11 @@ export default function BuildProfileScreen() {
   ]
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={insets.top}
+    >
       {/* Floating nav: back left, edit right (owner only) */}
       <View style={styles.navBar}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
@@ -475,7 +482,7 @@ export default function BuildProfileScreen() {
       </ScrollView>
 
       {activeTab === 'comments' && (
-        <View style={styles.commentInputBar}>
+        <View style={[styles.commentInputBar, { paddingBottom: 10 + insets.bottom }]}>
           {replyingTo && (
             <View style={styles.replyingBanner}>
               <Text style={styles.replyingText}>Replying to @{replyingTo.username}</Text>
@@ -638,7 +645,7 @@ export default function BuildProfileScreen() {
           }}
         />
       )}
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

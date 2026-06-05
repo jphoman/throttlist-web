@@ -608,7 +608,8 @@ export async function fetchBuildComments(buildId: string): Promise<Comment[]> {
     .from('comments')
     .select('*, profiles(username, display_name, avatar_url, is_pro)')
     .eq('build_id', buildId)
-    .is('post_id', null)
+    // No post_id filter needed — .eq('build_id') already scopes to build comments.
+    // Filtering on post_id IS NULL can fail if PostgREST schema cache hasn't refreshed.
     .order('created_at', { ascending: true })
   if (error || !data) return []
   return data.map((row: any) => mapCommentRow(row, 'build'))
