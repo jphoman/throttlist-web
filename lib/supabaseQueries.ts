@@ -148,7 +148,7 @@ export async function updateProfile(userId: string, updates: {
 export async function fetchUserBuilds(userId: string): Promise<Build[]> {
   const { data, error } = await supabase
     .from('builds')
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!builds_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .eq('user_id', userId)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
@@ -475,7 +475,7 @@ export async function fetchFollowedBuilds(userId: string): Promise<Build[]> {
   if (buildIds.length === 0) return []
   const { data, error } = await supabase
     .from('builds')
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!builds_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .in('id', buildIds)
     .eq('status', 'active')
   if (error || !data) return []
@@ -593,7 +593,7 @@ function mapCommentRow(row: any, targetType: 'post' | 'build' = 'post'): Comment
 export async function fetchComments(postId: string): Promise<Comment[]> {
   const { data, error } = await supabase
     .from('comments')
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!comments_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .eq('post_id', postId)
     // Note: no build_id filter needed — .eq('post_id') already excludes
     // build-scoped comments (those have post_id = null).
@@ -606,7 +606,7 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
 export async function fetchBuildComments(buildId: string): Promise<Comment[]> {
   const { data, error } = await supabase
     .from('comments')
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!comments_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .eq('build_id', buildId)
     // No post_id filter needed — .eq('build_id') already scopes to build comments.
     // Filtering on post_id IS NULL can fail if PostgREST schema cache hasn't refreshed.
@@ -619,7 +619,7 @@ export async function addComment(userId: string, postId: string, body: string, p
   const { data, error } = await supabase
     .from('comments')
     .insert({ user_id: userId, post_id: postId, body, parent_id: parentId ?? null })
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!comments_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .single()
   if (error || !data) throw error
   await supabase.from('posts').update({ comment_count: supabase.rpc('increment', { x: 1 }) }).eq('id', postId)
@@ -631,7 +631,7 @@ export async function addBuildComment(userId: string, buildId: string, body: str
   const { data, error } = await supabase
     .from('comments')
     .insert({ user_id: userId, build_id: buildId, body, parent_id: parentId ?? null })
-    .select('*, profiles(username, display_name, avatar_url, is_pro)')
+    .select('*, profiles!comments_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .single()
   if (error || !data) throw error
   return mapCommentRow(data, 'build')
