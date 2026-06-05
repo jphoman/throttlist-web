@@ -623,7 +623,7 @@ export async function addComment(userId: string, postId: string, body: string, p
     .select('*, profiles!comments_user_id_fkey(username, display_name, avatar_url, is_pro)')
     .single()
   if (error || !data) throw error
-  await supabase.from('posts').update({ comment_count: supabase.rpc('increment', { x: 1 }) }).eq('id', postId)
+  // comment_count is maintained by trg_comment_insert trigger — no manual update needed
   return mapCommentRow(data, 'post')
 }
 
@@ -640,9 +640,7 @@ export async function addBuildComment(userId: string, buildId: string, body: str
 
 export async function deleteComment(commentId: string, postId?: string): Promise<void> {
   await supabase.from('comments').delete().eq('id', commentId)
-  if (postId) {
-    await supabase.from('posts').update({ comment_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', postId)
-  }
+  // comment_count is decremented by trg_comment_delete trigger — no manual update needed
 }
 
 /** Toggle a like on a comment. Returns the new liked state. */
@@ -1062,7 +1060,7 @@ export async function saveProductTag(tag: {
 export async function fetchBuildFollowers(buildId: string): Promise<User[]> {
   const { data, error } = await supabase
     .from('build_follows')
-    .select('profiles!build_follows_follower_id_fkey(id, username, display_name, avatar_url, is_pro, bio, location, instagram_handle, youtube_handle, created_at)')
+    .select('profiles!inner(id, username, display_name, avatar_url, is_pro, bio, location, instagram_handle, youtube_handle, created_at)')
     .eq('build_id', buildId)
   if (error || !data) return []
   return data.map((row: any) => mapProfile(row.profiles))
