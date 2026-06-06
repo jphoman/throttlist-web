@@ -21,6 +21,8 @@ import {
   fetchCreatorFollowerCount,
   fetchBuildsByIds,
   toggleBuildFollow,
+  isFollowing,
+  toggleFollow,
 } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, formatFollowers } from '@/constants/throttlist'
@@ -34,6 +36,7 @@ export default function UserProfileScreen() {
   const queryClient = useQueryClient()
 
   const [modalOpen, setModalOpen] = useState(false)
+  const [userFollowing, setUserFollowing] = useState(false)
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['profile-by-username', username],
@@ -59,6 +62,29 @@ export default function UserProfileScreen() {
     queryFn: () => fetchCreatorFollowerCount(user!.id),
     enabled: !!user?.id,
   })
+
+  // User-level follow state (used when the profile owner has no builds yet)
+  useQuery({
+    queryKey: ['is-following-user', userId, user?.id],
+    queryFn: async () => {
+      const result = await isFollowing(userId, user!.id)
+      setUserFollowing(result)
+      return result
+    },
+    enabled: !!userId && !!user?.id && userId !== user?.id,
+  })
+
+  async function handleToggleUserFollow() {
+    if (!userId || !user?.id) return
+    const prev = userFollowing
+    setUserFollowing(!prev)
+    try {
+      await toggleFollow(userId, user.id, prev)
+      queryClient.invalidateQueries({ queryKey: ['creator-followers', user.id] })
+    } catch {
+      setUserFollowing(prev)
+    }
+  }
 
   const { data: followedBuildIds = new Set<string>() } = useQuery({
     queryKey: ['followed-builds', userId],
@@ -230,21 +256,30 @@ export default function UserProfileScreen() {
           {/* ── Follow + Message buttons — top-right of avatar row ── */}
           {!isOwner && (
             <View style={styles.actionCol}>
-              <Pressable
-                style={[styles.followBtn, isAnyFollowing && styles.followBtnActive]}
-                onPress={() => setModalOpen(true)}
-                accessibilityRole="button"
-                accessibilityLabel={isAnyFollowing ? 'Following' : 'Follow'}
-                accessibilityHint={
-                  activeBuilds.length > 1
-                    ? 'Opens a dialog to choose which builds to follow'
-                    : isAnyFollowing ? 'Tap to manage' : 'Follow this creator'
-                }
-              >
-                <Text style={[styles.followBtnText, isAnyFollowing && styles.followBtnTextActive]}>
-                  {isAnyFollowing ? 'Following' : 'Follow'}
-                </Text>
-              </Pressable>
+              {activeBuilds.length > 0 ? (
+                // Has builds — open the per-build follow modal
+                <Pressable
+                  style={[styles.followBtn, isAnyFollowing && styles.followBtnActive]}
+                  onPress={() => setModalOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={isAnyFollowing ? 'Following' : 'Follow'}
+                >
+                  <Text style={[styles.followBtnText, isAnyFollowing && styles.followBtnTextActive]}>
+                    {isAnyFollowing ? 'Following' : 'Follow'}
+                  </Text>
+                </Pressable>
+              ) : (
+                // No builds yet — follow the user directly
+                <Pressable
+                  style={[styles.followBtn, userFollowing && styles.followBtnActive]}
+                  onPress={handleToggleUserFollow}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.followBtnText, userFollowing && styles.followBtnTextActive]}>
+                    {userFollowing ? 'Following' : 'Follow'}
+                  </Text>
+                </Pressable>
+              )}
               <Pressable
                 style={styles.messageBtn}
                 onPress={() => router.push(`/conversation/${user.id}` as any)}

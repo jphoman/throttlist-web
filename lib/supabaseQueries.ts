@@ -1058,10 +1058,67 @@ export async function saveProductTag(tag: {
 }
 
 export async function fetchBuildFollowers(buildId: string): Promise<User[]> {
-  const { data, error } = await supabase
+  // Two-step: avoid PostgREST JOIN ambiguity on build_follows → profiles
+  const { data: follows, error: followsErr } = await supabase
     .from('build_follows')
-    .select('profiles!inner(id, username, display_name, avatar_url, is_pro, bio, location, instagram_handle, youtube_handle, created_at)')
+    .select('follower_id')
     .eq('build_id', buildId)
-  if (error || !data) return []
-  return data.map((row: any) => mapProfile(row.profiles))
+  if (followsErr || !follows || follows.length === 0) return []
+
+  const ids = follows.map((f: any) => f.follower_id)
+  const { data: profiles, error: profilesErr } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', ids)
+  if (profilesErr || !profiles) return []
+  return profiles.map(mapProfile)
+}
+
+/**
+ * For the followers page: returns each unique follower of the creator together
+ * with an array of the creator's build cover photos they follow (for avatars).
+ */
+export type FollowerWithBuilds = User & { followedBuildCovers: string[] }
+
+export async function fetchCreatorFollowersWithBuilds(creatorId: string): Promise<FollowerWithBuilds[]> {
+  // Creator's active builds
+  const { data: buildRows } = await supabase
+    .from('builds')
+    .select('id, cover_photo_url')
+    .eq('user_id', creatorId)
+    .eq('status', 'active')
+  if (!buildRows || buildRows.length === 0) return []
+
+  const buildIds = buildRows.map((b: any) => b.id)
+  const buildCoverMap = new Map<string, string>(buildRows.map((b: any) => [b.id, b.cover_photo_url ?? '']))
+
+  // All follows for these builds
+  const { data: follows } = await supabase
+    .from('build_follows')
+    .select('follower_id, build_id')
+    .in('build_id', buildIds)
+  if (!follows || follows.length === 0) return []
+
+  // Group build IDs by follower
+  const byFollower = new Map<string, string[]>()
+  for (const f of follows) {
+    const arr = byFollower.get(f.follower_id) ?? []
+    arr.push(f.build_id)
+    byFollower.set(f.follower_id, arr)
+  }
+
+  const uniqueIds = [...byFollower.keys()]
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', uniqueIds)
+  if (!profiles) return []
+
+  return profiles.map(p => ({
+    ...mapProfile(p),
+    followedBuildCovers: (byFollower.get(p.id) ?? [])
+      .map(bid => buildCoverMap.get(bid) ?? '')
+      .filter(Boolean)
+      .slice(0, 4),
+  }))
 }

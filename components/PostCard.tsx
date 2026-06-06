@@ -8,6 +8,8 @@ import {
   Dimensions,
   ScrollView,
   ActivityIndicator,
+  Share,
+  Platform,
 } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import Svg, { Path as SvgPath } from 'react-native-svg'
@@ -78,6 +80,23 @@ export default function PostCard({
     setLiked(next)
     onLike?.()
     toggleLike(authUser.id, post.id, liked).catch(() => setLiked(liked)) // rollback on error
+  }
+
+  async function handleShare() {
+    if (onShare) { onShare(); return }
+    const url = `https://throttlist.com/post/${post.id}`
+    const text = post.caption ? `${post.caption}\n${url}` : url
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          await navigator.share({ title: 'Throttlist', url })
+        } else if (navigator.clipboard) {
+          await navigator.clipboard.writeText(url)
+        }
+      } else {
+        await Share.share({ message: text, url })
+      }
+    } catch { /* user cancelled */ }
   }
 
   function openComments() {
@@ -184,7 +203,7 @@ export default function PostCard({
               <MessageCircle size={22} color="#FFFFFF" />
               <Text style={styles.overlayActionCount}>{formatFollowers(post.commentCount)}</Text>
             </Pressable>
-            <Pressable style={styles.overlayActionBtn} onPress={onShare}>
+            <Pressable style={styles.overlayActionBtn} onPress={handleShare}>
               <Share2 size={22} color="#FFFFFF" />
             </Pressable>
           </View>
