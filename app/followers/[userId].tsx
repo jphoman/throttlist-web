@@ -87,18 +87,21 @@ function FollowerRow({ follower }: { follower: FollowerWithBuilds }) {
         </Text>
       </View>
 
-      {/* Build cover thumbnails they follow */}
-      {follower.followedBuildCovers.length > 0 && (
-        <View style={styles.buildThumbs}>
-          {follower.followedBuildCovers.map((url, i) => (
-            <Image
-              key={i}
-              source={{ uri: url }}
-              style={[styles.buildThumb, i > 0 && styles.buildThumbOverlap]}
-            />
-          ))}
-        </View>
-      )}
+      {/* Circular build cover photos + optional "+" for future-builds follower */}
+      <View style={styles.buildThumbs}>
+        {follower.followedBuildCovers.map((url, i) => (
+          <Image
+            key={i}
+            source={{ uri: url }}
+            style={[styles.buildThumb, i > 0 && styles.buildThumbOverlap]}
+          />
+        ))}
+        {follower.followsFuture && (
+          <View style={[styles.buildThumb, styles.futureBadge, follower.followedBuildCovers.length > 0 && styles.buildThumbOverlap]}>
+            <Text style={styles.futurePlus}>+</Text>
+          </View>
+        )}
+      </View>
     </Pressable>
   )
 }
@@ -138,12 +141,23 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   displayName: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
   username: { color: colors.textTertiary, fontSize: 13 },
-  // Build thumbnails stacked with overlap
+  // Build avatar circles stacked with overlap
   buildThumbs: { flexDirection: 'row', alignItems: 'center' },
   buildThumb: {
-    width: 32, height: 32, borderRadius: 6,
-    borderWidth: 1.5, borderColor: colors.bg,
+    width: 30, height: 30, borderRadius: 15,   // circle
+    borderWidth: 2, borderColor: colors.bg,
     backgroundColor: colors.surface2,
   },
   buildThumbOverlap: { marginLeft: -10 },
+  futureBadge: {
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  futurePlus: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
 })

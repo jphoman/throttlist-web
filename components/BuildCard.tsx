@@ -1,6 +1,6 @@
 import React from 'react'
 import { View, Text, StyleSheet, Pressable, Image } from 'react-native'
-import { Users, Wrench, Grid } from '@/components/Icons'
+import { Users, Tag, Grid } from '@/components/Icons'
 import { colors, formatFollowers } from '@/constants/throttlist'
 import type { Build } from '@/types'
 
@@ -75,7 +75,7 @@ export default function BuildCard({
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Wrench size={12} color={colors.textTertiary} />
+            <Tag size={12} color={colors.textTertiary} />
             <Text style={styles.statText}>{build.partCount ?? 0}</Text>
           </View>
         </View>

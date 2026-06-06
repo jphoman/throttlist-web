@@ -13,7 +13,7 @@ import {
 } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Heart, Send, ProBadge } from '@/components/Icons'
-import { fetchComments, addComment, deleteComment, toggleCommentLike, fetchLikedCommentIds } from '@/lib/supabaseQueries'
+import { fetchComments, addComment, deleteComment, toggleCommentLike, fetchLikedCommentIds, fetchProfile } from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, timeAgo } from '@/constants/throttlist'
 import { router } from 'expo-router'
@@ -122,6 +122,14 @@ function CommentRow({ comment, isMine, isReply, isLiked, onDelete, onReport, onR
 
 export default function CommentSheet({ visible, postId, onClose }: CommentSheetProps) {
   const { user: authUser } = useAuth()
+
+  // Fetch current user's profile for their real avatar
+  const { data: myProfile } = useQuery({
+    queryKey: ['profile', authUser?.id],
+    queryFn: () => fetchProfile(authUser!.id),
+    enabled: !!authUser?.id,
+    staleTime: 5 * 60_000,
+  })
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -352,14 +360,11 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
           )}
 
           <View style={styles.inputRow}>
-            {authUser ? (
-              <InitialsAvatar
-                name={authUser.email?.split('@')[0] ?? '?'}
-                size={32}
-              />
-            ) : (
-              <InitialsAvatar name="?" size={32} />
-            )}
+            <InitialsAvatar
+              name={myProfile?.displayName ?? myProfile?.username ?? authUser?.email?.split('@')[0] ?? '?'}
+              photoUrl={myProfile?.avatarUrl}
+              size={32}
+            />
             <TextInput
               ref={inputRef}
               style={styles.input}

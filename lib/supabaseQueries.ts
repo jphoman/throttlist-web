@@ -1078,36 +1078,51 @@ export async function fetchBuildFollowers(buildId: string): Promise<User[]> {
  * For the followers page: returns each unique follower of the creator together
  * with an array of the creator's build cover photos they follow (for avatars).
  */
-export type FollowerWithBuilds = User & { followedBuildCovers: string[] }
+export type FollowerWithBuilds = User & {
+  followedBuildCovers: string[]   // cover photo URLs of the creator's builds this user follows
+  followsFuture: boolean          // true if they follow the creator directly (future builds)
+}
 
 export async function fetchCreatorFollowersWithBuilds(creatorId: string): Promise<FollowerWithBuilds[]> {
-  // Creator's active builds
+  // 1. Creator's active builds
   const { data: buildRows } = await supabase
     .from('builds')
     .select('id, cover_photo_url')
     .eq('user_id', creatorId)
     .eq('status', 'active')
-  if (!buildRows || buildRows.length === 0) return []
 
-  const buildIds = buildRows.map((b: any) => b.id)
-  const buildCoverMap = new Map<string, string>(buildRows.map((b: any) => [b.id, b.cover_photo_url ?? '']))
+  const buildIds = (buildRows ?? []).map((b: any) => b.id)
+  const buildCoverMap = new Map<string, string>((buildRows ?? []).map((b: any) => [b.id, b.cover_photo_url ?? '']))
 
-  // All follows for these builds
-  const { data: follows } = await supabase
-    .from('build_follows')
-    .select('follower_id, build_id')
-    .in('build_id', buildIds)
-  if (!follows || follows.length === 0) return []
-
-  // Group build IDs by follower
+  // 2. Build-level followers
   const byFollower = new Map<string, string[]>()
-  for (const f of follows) {
-    const arr = byFollower.get(f.follower_id) ?? []
-    arr.push(f.build_id)
-    byFollower.set(f.follower_id, arr)
+  if (buildIds.length > 0) {
+    const { data: buildFollows } = await supabase
+      .from('build_follows')
+      .select('follower_id, build_id')
+      .in('build_id', buildIds)
+    for (const f of buildFollows ?? []) {
+      const arr = byFollower.get(f.follower_id) ?? []
+      arr.push(f.build_id)
+      byFollower.set(f.follower_id, arr)
+    }
+  }
+
+  // 3. User-level followers (follow the creator directly = follows future builds)
+  const futureFollowerIds = new Set<string>()
+  const { data: userFollows } = await supabase
+    .from('follows')
+    .select('follower_id')
+    .eq('following_id', creatorId)
+  for (const f of userFollows ?? []) {
+    futureFollowerIds.add(f.follower_id)
+    // Ensure they appear in the follower list even if not following any current build
+    if (!byFollower.has(f.follower_id)) byFollower.set(f.follower_id, [])
   }
 
   const uniqueIds = [...byFollower.keys()]
+  if (uniqueIds.length === 0) return []
+
   const { data: profiles } = await supabase
     .from('profiles')
     .select('*')
@@ -1118,7 +1133,7 @@ export async function fetchCreatorFollowersWithBuilds(creatorId: string): Promis
     ...mapProfile(p),
     followedBuildCovers: (byFollower.get(p.id) ?? [])
       .map(bid => buildCoverMap.get(bid) ?? '')
-      .filter(Boolean)
-      .slice(0, 4),
+      .filter(Boolean),
+    followsFuture: futureFollowerIds.has(p.id),
   }))
 }
