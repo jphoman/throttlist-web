@@ -7,13 +7,17 @@ import {
   Pressable,
   FlatList,
   TextInput,
-  KeyboardAvoidingView,
+  Keyboard,
+  Dimensions,
   Platform,
   Image,
 } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Heart, Send, ProBadge } from '@/components/Icons'
-import { fetchComments, addComment, deleteComment, toggleCommentLike, fetchLikedCommentIds, fetchProfile } from '@/lib/supabaseQueries'
+import {
+  fetchComments, addComment, deleteComment,
+  toggleCommentLike, fetchLikedCommentIds, fetchProfile,
+} from '@/lib/supabaseQueries'
 import { useAuth } from '@/lib/auth'
 import { colors, timeAgo } from '@/constants/throttlist'
 import { router } from 'expo-router'
@@ -120,16 +124,19 @@ function CommentRow({ comment, isMine, isReply, isLiked, onDelete, onReport, onR
   )
 }
 
+const SCREEN_HEIGHT = Dimensions.get('window').height
+const DEFAULT_SHEET_HEIGHT = SCREEN_HEIGHT * 0.70
+
 export default function CommentSheet({ visible, postId, onClose }: CommentSheetProps) {
   const { user: authUser } = useAuth()
 
-  // Fetch current user's profile for their real avatar
   const { data: myProfile } = useQuery({
     queryKey: ['profile', authUser?.id],
     queryFn: () => fetchProfile(authUser!.id),
     enabled: !!authUser?.id,
     staleTime: 5 * 60_000,
   })
+
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -137,9 +144,31 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
-  // Optimistic comment likes: map of commentId → liked state
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
   const inputRef = useRef<TextInput>(null)
+
+  // Track keyboard height to expand the sheet and eliminate the gap
+  useEffect(() => {
+    if (Platform.OS === 'web') return
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const onShow = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height))
+    const onHide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0))
+    return () => { onShow.remove(); onHide.remove() }
+  }, [])
+
+  // Reset state when sheet closes
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0)
+      setDraft('')
+      setReplyingTo(null)
+      setSendError(null)
+      setLocalComments([])
+      setDeletedIds(new Set())
+    }
+  }, [visible])
 
   const { data: fetched = [] } = useQuery({
     queryKey: ['comments', postId],
@@ -147,14 +176,12 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     enabled: visible && !!postId,
   })
 
-  // Load which comments the current user has liked
   useEffect(() => {
     if (!authUser?.id || fetched.length === 0) return
     const ids = fetched.map(c => c.id)
     fetchLikedCommentIds(authUser.id, ids).then(liked => setLikedIds(liked))
   }, [authUser?.id, fetched.length])
 
-  // Merge: fetched (minus deleted) + local optimistic
   const allComments = [
     ...fetched.filter(c => !deletedIds.has(c.id)),
     ...localComments.filter(c => !deletedIds.has(c.id)),
@@ -198,7 +225,6 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
       ? (replyingTo.parentId ?? replyingTo.id)
       : undefined
 
-    // Optimistic: add a placeholder immediately so it feels instant
     const tempId = `local_${Date.now()}`
     const optimistic: Comment = {
       id: tempId,
@@ -210,21 +236,18 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
       likes: 0,
       isPinned: '0',
       createdAt: new Date().toISOString(),
-      username: authUser.email?.split('@')[0],
-      displayName: authUser.email?.split('@')[0],
-      avatarUrl: '',
+      username: myProfile?.username ?? authUser.email?.split('@')[0],
+      displayName: myProfile?.displayName ?? myProfile?.username ?? authUser.email?.split('@')[0],
+      avatarUrl: myProfile?.avatarUrl ?? '',
     }
     setLocalComments(prev => [...prev, optimistic])
 
     setSendError(null)
     try {
       await addComment(authUser.id, postId, body, parentId)
-      // Remove optimistic placeholder — the refetch will include the real DB row
       setLocalComments(prev => prev.filter(c => c.id !== tempId))
       queryClient.invalidateQueries({ queryKey: ['comments', postId] })
 
-      // Optimistically increment commentCount in every cached feed/post query
-      // so the icon updates immediately without waiting for a full refetch
       const bumpPost = (old: any) => {
         if (!old) return old
         if (Array.isArray(old))
@@ -237,11 +260,9 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
       queryClient.setQueriesData({ queryKey: ['feed-posts'] }, bumpPost)
       queryClient.setQueriesData({ queryKey: ['post', postId] }, bumpPost)
     } catch (e: any) {
-      // Show the actual error so we can diagnose DB/RLS issues
       const msg = e?.message ?? JSON.stringify(e) ?? 'Failed to save comment'
       setSendError(msg)
       console.error('[CommentSheet] addComment failed:', e)
-      // Keep optimistic visible with a "failed" note
     } finally {
       setSending(false)
     }
@@ -250,14 +271,12 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
   function handleToggleCommentLike(comment: Comment) {
     if (!authUser?.id) return
     const wasLiked = likedIds.has(comment.id)
-    // Optimistic update
     setLikedIds(prev => {
       const next = new Set(prev)
       if (wasLiked) next.delete(comment.id)
       else next.add(comment.id)
       return next
     })
-    // Persist — rollback on failure
     toggleCommentLike(authUser.id, comment.id, wasLiked).catch(() => {
       setLikedIds(prev => {
         const next = new Set(prev)
@@ -273,7 +292,6 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     try {
       await deleteComment(id, postId)
       queryClient.invalidateQueries({ queryKey: ['comments', postId] })
-      // Decrement count in feed/post caches
       const dropPost = (old: any) => {
         if (!old) return old
         if (Array.isArray(old))
@@ -294,19 +312,34 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
     // TODO: report flow
   }
 
+  const isKeyboardOpen = keyboardHeight > 0
   const totalCount = listItems.length
+
+  // Sheet sits directly above the keyboard with no gap.
+  // When keyboard is open: sheet fills exactly the space above it (full screen appearance).
+  // When keyboard is closed: sheet is 70% of screen height.
+  const sheetStyle = Platform.OS !== 'web'
+    ? {
+        height: isKeyboardOpen ? SCREEN_HEIGHT - keyboardHeight : DEFAULT_SHEET_HEIGHT,
+        bottom: keyboardHeight,
+        borderTopLeftRadius: isKeyboardOpen ? 0 : 18,
+        borderTopRightRadius: isKeyboardOpen ? 0 : 18,
+      }
+    : {}
+
+  const inputBottomPad = isKeyboardOpen ? 10 : (Platform.OS === 'ios' ? 28 : 10)
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      {/* Full-screen backdrop */}
+      <View style={styles.modalRoot}>
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
 
-      <KeyboardAvoidingView
-        style={styles.sheetWrap}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, sheetStyle]}>
+          {/* Drag handle */}
           <View style={styles.handle} />
 
+          {/* Header */}
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>
               Comments{totalCount > 0 ? ` (${totalCount})` : ''}
@@ -316,6 +349,7 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
             </Pressable>
           </View>
 
+          {/* Comment list fills remaining space */}
           <FlatList
             data={listItems}
             keyExtractor={item => item.comment.id}
@@ -337,10 +371,12 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
               </View>
             }
             contentContainerStyle={styles.listContent}
+            style={styles.list}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           />
 
+          {/* Reply banner */}
           {replyingTo && (
             <View style={styles.replyBanner}>
               <Text style={styles.replyBannerText}>
@@ -353,69 +389,73 @@ export default function CommentSheet({ visible, postId, onClose }: CommentSheetP
             </View>
           )}
 
+          {/* Error banner */}
           {sendError && (
             <View style={styles.errorBanner}>
               <Text style={styles.errorBannerText}>⚠ {sendError}</Text>
             </View>
           )}
 
-          <View style={styles.inputRow}>
+          {/* Input row: avatar + input field with send pill inside */}
+          <View style={[styles.inputRow, { paddingBottom: inputBottomPad }]}>
             <InitialsAvatar
               name={myProfile?.displayName ?? myProfile?.username ?? authUser?.email?.split('@')[0] ?? '?'}
               photoUrl={myProfile?.avatarUrl}
-              size={32}
+              size={34}
             />
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder={
-                !authUser
-                  ? 'Sign in to comment…'
-                  : replyingTo
-                  ? `Reply to @${replyingTo.username}…`
-                  : 'Add a comment…'
-              }
-              placeholderTextColor={colors.textTertiary}
-              value={draft}
-              onChangeText={setDraft}
-              multiline
-              maxLength={500}
-              returnKeyType="send"
-              onSubmitEditing={handleSend}
-              editable={!!authUser}
-            />
-            <Pressable
-              onPress={handleSend}
-              style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
-              disabled={!draft.trim() || sending || !authUser}
-            >
-              <Send size={18} color={draft.trim() && !sending ? colors.accent : colors.textTertiary} />
-            </Pressable>
+            <View style={styles.inputWrap}>
+              <TextInput
+                ref={inputRef}
+                style={styles.input}
+                placeholder={
+                  !authUser
+                    ? 'Sign in to comment…'
+                    : replyingTo
+                    ? `Reply to @${replyingTo.username}…`
+                    : 'Add a comment…'
+                }
+                placeholderTextColor={colors.textTertiary}
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                maxLength={500}
+                returnKeyType="send"
+                onSubmitEditing={handleSend}
+                editable={!!authUser}
+              />
+              {!!draft.trim() && (
+                <Pressable
+                  onPress={handleSend}
+                  style={[styles.sendPill, sending && styles.sendPillDisabled]}
+                  disabled={sending}
+                >
+                  <Send size={15} color="#fff" />
+                </Pressable>
+              )}
+            </View>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   )
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  // Full-screen overlay — backdrop covers everything, sheet is absolute at bottom
+  modalRoot: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  sheetWrap: {
+  sheet: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-  },
-  sheet: {
+    bottom: 0,
     backgroundColor: colors.surface1,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
-    maxHeight: '80%',
-    minHeight: 300,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+    // Web fallback (no keyboard events)
+    ...(Platform.OS === 'web' ? { maxHeight: '80%', minHeight: 300 } : {}),
   },
   handle: {
     width: 38,
@@ -431,7 +471,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -441,23 +481,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   closeBtn: { padding: 4 },
+  // FlatList fills all space between header and input bar
+  list: {
+    flex: 1,
+  },
   listContent: {
-    paddingVertical: 4,
+    paddingVertical: 2,
     flexGrow: 1,
   },
   commentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 8,
     gap: 10,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
   commentRowReply: {
     paddingLeft: 28,
     backgroundColor: colors.surface1,
-    borderBottomColor: colors.border,
   },
   replyLine: {
     position: 'absolute',
@@ -498,7 +541,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 3,
+    marginBottom: 2,
   },
   usernameRow: {
     flexDirection: 'row',
@@ -520,14 +563,14 @@ const styles = StyleSheet.create({
   commentText: {
     color: colors.textPrimary,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 19,
   },
   commentTextSmall: {
     fontSize: 13,
     lineHeight: 18,
   },
   commentMeta: {
-    marginTop: 6,
+    marginTop: 5,
   },
   replyBtnText: {
     color: colors.textTertiary,
@@ -605,6 +648,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  // Input bar at the bottom
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -614,25 +658,37 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  // Text field + send pill wrapper
+  inputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: colors.surface2,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.surface3,
+  },
   input: {
     flex: 1,
-    backgroundColor: colors.surface2,
-    borderRadius: 20,
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 10,
     color: colors.textPrimary,
     fontSize: 14,
     maxHeight: 100,
-    borderWidth: 1,
-    borderColor: colors.surface3,
   },
-  sendBtn: {
-    padding: 8,
-    marginBottom: 1,
+  // Red send pill lives inside the input wrapper (only visible when text is present)
+  sendPill: {
+    margin: 4,
+    backgroundColor: colors.accent,
+    borderRadius: 17,
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sendBtnDisabled: {
-    opacity: 0.4,
+  sendPillDisabled: {
+    opacity: 0.5,
   },
   empty: {
     padding: 40,

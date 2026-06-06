@@ -499,7 +499,7 @@ export default function BuildProfileScreen() {
               </Pressable>
             </View>
           )}
-          <View style={styles.commentInputRow}>
+          <View style={styles.commentInputWrap}>
             <TextInput
               ref={commentInputRef}
               style={styles.commentInput}
@@ -509,11 +509,7 @@ export default function BuildProfileScreen() {
               onChangeText={setCommentText}
               multiline={false}
               returnKeyType="send"
-            />
-            <Pressable
-              style={[styles.commentSendBtn, !commentText.trim() && styles.commentSendBtnDisabled]}
-              disabled={!commentText.trim() || !authUser}
-              onPress={async () => {
+              onSubmitEditing={async () => {
                 const body = commentText.trim()
                 if (!body || !authUser || !data?.build?.id) return
                 setCommentText('')
@@ -529,7 +525,6 @@ export default function BuildProfileScreen() {
                   displayName: authUser.email?.split('@')[0], avatarUrl: '',
                 }
                 setLocalComments(prev => [...prev, optimistic])
-                // Scroll to bottom so new comment is visible above the keyboard
                 setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50)
                 try {
                   await addBuildComment(authUser.id, data.build.id, body, replyingTo?.commentId)
@@ -539,12 +534,43 @@ export default function BuildProfileScreen() {
                   const msg = e?.message ?? JSON.stringify(e) ?? 'Failed to save comment'
                   setCommentError(msg)
                   console.error('[BuildPage] addBuildComment failed:', e)
-                  // optimistic stays visible
                 }
               }}
-            >
-              <Send size={16} color="#fff" />
-            </Pressable>
+            />
+            {!!commentText.trim() && authUser && (
+              <Pressable
+                style={styles.commentSendPill}
+                onPress={async () => {
+                  const body = commentText.trim()
+                  if (!body || !authUser || !data?.build?.id) return
+                  setCommentText('')
+                  setReplyingTo(null)
+                  setCommentError(null)
+                  const tempId = `local_${Date.now()}`
+                  const optimistic: Comment = {
+                    id: tempId, body, authorUserId: authUser.id,
+                    parentId: replyingTo?.commentId,
+                    targetType: 'build', targetId: data.build.id,
+                    likes: 0, isPinned: '0', createdAt: new Date().toISOString(),
+                    username: authUser.email?.split('@')[0],
+                    displayName: authUser.email?.split('@')[0], avatarUrl: '',
+                  }
+                  setLocalComments(prev => [...prev, optimistic])
+                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50)
+                  try {
+                    await addBuildComment(authUser.id, data.build.id, body, replyingTo?.commentId)
+                    setLocalComments(prev => prev.filter(c => c.id !== tempId))
+                    refetchComments()
+                  } catch (e: any) {
+                    const msg = e?.message ?? JSON.stringify(e) ?? 'Failed to save comment'
+                    setCommentError(msg)
+                    console.error('[BuildPage] addBuildComment failed:', e)
+                  }
+                }}
+              >
+                <Send size={15} color="#fff" />
+              </Pressable>
+            )}
           </View>
         </View>
       )}
@@ -1188,32 +1214,31 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
   },
-  commentInputRow: {
+  // Input field + send pill wrapper (send pill lives inside, only appears when text present)
+  commentInputWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  commentInput: {
+    alignItems: 'flex-end',
     flex: 1,
     backgroundColor: colors.surface1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 20,
+    borderRadius: 22,
+  },
+  commentInput: {
+    flex: 1,
     paddingHorizontal: 14,
     paddingVertical: 9,
     color: colors.textPrimary,
     fontSize: 14,
   },
-  commentSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  commentSendPill: {
+    margin: 4,
     backgroundColor: colors.accent,
+    borderRadius: 17,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  commentSendBtnDisabled: {
-    opacity: 0.4,
   },
   replyRow: {
     flexDirection: 'row',
